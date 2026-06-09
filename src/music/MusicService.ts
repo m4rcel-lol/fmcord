@@ -541,6 +541,8 @@ export class MusicService {
 
     const embed = this.buildNowPlayingEmbed(session);
 
+    // First choice: edit the live panel already created during this bot runtime.
+    // This is what prevents loop-track / next-track spam.
     if (session.nowPlayingChannelId && session.nowPlayingMessageId) {
       const edited = await this.tryEditMessage(session.nowPlayingChannelId, session.nowPlayingMessageId, embed);
       if (edited) return;
@@ -548,14 +550,12 @@ export class MusicService {
       session.nowPlayingMessageId = null;
     }
 
+    // Do NOT adopt old historical messages before sending. v1.4 could silently edit an
+    // old panel buried in chat history, which made it look like no Now Playing panel
+    // was sent. If there is no saved live panel, create exactly one visible panel now.
     const channelIds = [session.textChannelId, session.commandChannelId].filter(
       (channelId, index, all): channelId is string => Boolean(channelId) && all.indexOf(channelId) === index
     );
-
-    for (const channelId of channelIds) {
-      const adopted = await this.tryAdoptExistingNowPlayingMessage(session, channelId, embed);
-      if (adopted) return;
-    }
 
     for (const channelId of channelIds) {
       try {
@@ -565,11 +565,28 @@ export class MusicService {
         if (this.isDiscordMessage(sent)) {
           session.nowPlayingChannelId = sent.channelId;
           session.nowPlayingMessageId = sent.id;
+          void this.deleteDuplicateNowPlayingMessagesInChannel(sent.channelId, sent.id);
         }
         return;
       } catch (error) {
         logger.debug(`Could not send now-playing panel to channel ${channelId}`, error instanceof Error ? error.message : String(error));
       }
+    }
+  }
+
+  private async deleteDuplicateNowPlayingMessagesInChannel(channelId: string, keepId: string): Promise<void> {
+    try {
+      const channel = await this.fetchSendableChannel(channelId);
+      const messagesApi = (channel as { messages?: { fetch?: (options: unknown) => Promise<unknown> } } | null)?.messages;
+      if (!messagesApi?.fetch) return;
+
+      const result = await messagesApi.fetch({ limit: 25 });
+      const duplicates = this.messageArray(result).filter(
+        (message) => message.id !== keepId && this.isFMCordNowPlayingMessage(message)
+      );
+      await this.deleteDuplicateNowPlayingMessages(duplicates, keepId);
+    } catch (error) {
+      logger.debug(`Could not clean duplicate now-playing panels in channel ${channelId}`, error instanceof Error ? error.message : String(error));
     }
   }
 
