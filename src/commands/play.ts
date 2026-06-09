@@ -1,4 +1,4 @@
-import { SlashCommandBuilder } from "discord.js";
+import { MessageFlags, SlashCommandBuilder } from "discord.js";
 import { musicService } from "../music/MusicService";
 import { compactTrackLink, errorEmbed, musicEmbed, safeText, statusPill } from "../utils/embeds";
 import { UserFacingError } from "../utils/permissions";
@@ -16,7 +16,7 @@ export const playCommand: Command = {
     const query = interaction.options.getString("query", true);
 
     try {
-      await interaction.deferReply();
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       await interaction.editReply({
         embeds: [
           musicEmbed("🔎 Finding your track…", `Searching for **${safeText(query, 120)}** and preparing the voice connection.`)
@@ -28,9 +28,9 @@ export const playCommand: Command = {
       const first = result.tracks[0];
       if (!first) throw new UserFacingError("No playable results were found.");
 
-      const title = result.startedImmediately ? "▶️ Now playing" : "➕ Added to queue";
+      const title = result.startedImmediately ? "✅ Playback starting" : "➕ Added to queue";
       const description = result.tracks.length === 1
-        ? `### ${compactTrackLink(first.title, first.url, 190)}`
+        ? `### ${compactTrackLink(first.title, first.url, 190)}\nThe public **Now playing** embed will be posted in your voice channel chat.`
         : `### Added **${result.tracks.length}** tracks\nFirst track: ${compactTrackLink(first.title, first.url, 150)}`;
 
       const embed = musicEmbed(title, description).addFields(

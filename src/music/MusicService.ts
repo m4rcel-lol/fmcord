@@ -25,6 +25,19 @@ import { makeProgressBar } from "./progress";
 import { LoopMode, Track } from "./Track";
 import { YtdlpExtractor } from "./YtdlpExtractor";
 
+const VOICE_STATUS_PERMISSION = 1n << 48n;
+
+function makeVoiceStatus(title: string): string {
+  const prefix = "🎵 ";
+  const cleanTitle = title.replace(/\s+/g, " ").trim() || "Unknown track";
+  const maxLength = Math.max(prefix.length + 8, Math.min(config.voiceStatusMaxLength, 500));
+  const available = maxLength - prefix.length;
+  const shortened = cleanTitle.length <= available
+    ? cleanTitle
+    : `${cleanTitle.slice(0, Math.max(0, available - 3)).trimEnd()}...`;
+  return `${prefix}${shortened}`;
+}
+
 interface GuildSession {
   guildId: string;
   queue: Queue;
@@ -34,7 +47,9 @@ interface GuildSession {
   loopMode: LoopMode;
   volume: number;
   textChannelId: string | null;
+  commandChannelId: string | null;
   voiceChannelId: string | null;
+  lastVoiceStatus: string | null;
   idleTimer: NodeJS.Timeout | null;
   emptyTimer: NodeJS.Timeout | null;
   cleanupStream: (() => void) | null;
@@ -78,7 +93,8 @@ export class MusicService {
     assertVoicePermissions(interaction, voiceChannel);
 
     const session = this.getOrCreateSession(interaction.guild.id);
-    session.textChannelId = interaction.channelId;
+    session.commandChannelId = interaction.channelId;
+    session.textChannelId = voiceChannel.id;
 
     const connectionPromise = this.ensureConnection(interaction, voiceChannel, session);
     const tracksPromise = this.extractor.resolve(query, {
@@ -138,6 +154,7 @@ export class MusicService {
     session.cleanupStream?.();
     session.cleanupStream = null;
     session.player.stop(true);
+    void this.setVoiceChannelStatus(session, null);
     this.scheduleIdleDisconnect(session);
   }
 
@@ -255,7 +272,9 @@ export class MusicService {
       loopMode: "off",
       volume: config.defaultVolume,
       textChannelId: null,
+      commandChannelId: null,
       voiceChannelId: null,
+      lastVoiceStatus: null,
       idleTimer: null,
       emptyTimer: null,
       cleanupStream: null,
@@ -298,6 +317,8 @@ export class MusicService {
 
     if (existing && existing.state.status !== VoiceConnectionStatus.Destroyed) {
       session.connection = existing;
+      session.voiceChannelId = channel.id;
+      session.textChannelId = channel.id;
       session.connection.subscribe(session.player);
       return;
     }
@@ -343,6 +364,7 @@ export class MusicService {
     const next = session.queue.shift();
     if (!next) {
       session.current = null;
+      void this.setVoiceChannelStatus(session, null);
       this.scheduleIdleDisconnect(session);
       return;
     }
@@ -363,6 +385,7 @@ export class MusicService {
       });
       resource.volume?.setVolume(session.volume / 100);
       session.player.play(resource);
+      await this.setVoiceChannelStatus(session, makeVoiceStatus(next.title));
 
       await this.sendToTextChannel(
         session,
@@ -449,6 +472,7 @@ export class MusicService {
     } catch {
       // Already stopped.
     }
+    void this.setVoiceChannelStatus(session, null);
     try {
       session.connection?.destroy();
     } catch {
@@ -458,14 +482,47 @@ export class MusicService {
   }
 
   private async sendToTextChannel(session: GuildSession, embed: ReturnType<typeof successEmbed>): Promise<void> {
-    if (!this.client || !session.textChannelId) return;
+    if (!this.client) return;
+
+    const channelIds = [session.textChannelId, session.commandChannelId].filter(
+      (channelId, index, all): channelId is string => Boolean(channelId) && all.indexOf(channelId) === index
+    );
+
+    for (const channelId of channelIds) {
+      try {
+        const channel = await this.client.channels.fetch(channelId);
+        if (!channel || !this.canSend(channel)) continue;
+        await channel.send({ embeds: [embed] });
+        return;
+      } catch (error) {
+        logger.debug(`Could not send music update to channel ${channelId}`, error instanceof Error ? error.message : String(error));
+      }
+    }
+  }
+
+  private async setVoiceChannelStatus(session: GuildSession, status: string | null): Promise<void> {
+    if (!config.enableVoiceStatus || !this.client || !session.voiceChannelId) return;
+
+    const normalizedStatus = status?.slice(0, 500) ?? null;
+    if (session.lastVoiceStatus === normalizedStatus) return;
 
     try {
-      const channel = await this.client.channels.fetch(session.textChannelId);
-      if (!channel || !this.canSend(channel)) return;
-      await channel.send({ embeds: [embed] });
+      const guild = this.client.guilds.cache.get(session.guildId);
+      const voiceChannel = guild?.channels.cache.get(session.voiceChannelId);
+      const me = guild?.members.me ?? null;
+      const permissions = me && voiceChannel ? voiceChannel.permissionsFor(me) : null;
+
+      if (permissions && !permissions.has(VOICE_STATUS_PERMISSION)) {
+        logger.debug(`Skipping voice status update in guild ${session.guildId}: missing SET_VOICE_CHANNEL_STATUS permission`);
+        return;
+      }
+
+      await this.client.rest.put(`/channels/${session.voiceChannelId}/voice-status` as `/${string}`, {
+        body: { status: normalizedStatus }
+      });
+      session.lastVoiceStatus = normalizedStatus;
     } catch (error) {
-      logger.debug("Could not send music update", error instanceof Error ? error.message : String(error));
+      logger.debug("Could not update voice channel status", error instanceof Error ? error.message : String(error));
     }
   }
 

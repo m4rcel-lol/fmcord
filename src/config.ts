@@ -33,6 +33,8 @@ export const config = {
   idleTimeoutSeconds: readNumber("IDLE_TIMEOUT_SECONDS", 300, 30, 3600),
   leaveEmptyChannelSeconds: readNumber("LEAVE_EMPTY_CHANNEL_SECONDS", 60, 10, 900),
   enableGlobalCommands: readBoolean("ENABLE_GLOBAL_COMMANDS", false),
+  enableVoiceStatus: readBoolean("ENABLE_VOICE_STATUS", true),
+  voiceStatusMaxLength: readNumber("VOICE_STATUS_MAX_LENGTH", 80, 20, 500),
   ytdlpBinary: process.env.YTDLP_BINARY?.trim() || "yt-dlp",
   ffmpegBinary: process.env.FFMPEG_BINARY?.trim() || "ffmpeg"
 } as const;

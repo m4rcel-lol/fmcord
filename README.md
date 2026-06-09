@@ -22,6 +22,8 @@ It uses slash commands only and does not require YouTube API keys, Spotify keys,
 - Shuffle, remove, clear
 - Idle disconnect
 - Empty voice channel disconnect
+- Public Now Playing messages in the voice channel chat
+- Voice channel status like `🎵 Song title...` while playing
 - Docker Compose deployment
 - Alpine Linux container
 - FFmpeg included
@@ -64,9 +66,10 @@ For local development:
    - Connect
    - Speak
    - Use Voice Activity
+   - Set Voice Channel Status
 11. Open the generated invite URL and add the bot to your server.
 
-FMCord does not need Administrator permission.
+FMCord does not need Administrator permission. The **Set Voice Channel Status** permission is only needed for the optional voice channel status feature; playback still works without it.
 
 ## Required intents
 
@@ -99,6 +102,8 @@ MAX_PLAYLIST_SIZE=25
 IDLE_TIMEOUT_SECONDS=300
 LEAVE_EMPTY_CHANNEL_SECONDS=60
 ENABLE_GLOBAL_COMMANDS=false
+ENABLE_VOICE_STATUS=true
+VOICE_STATUS_MAX_LENGTH=80
 YTDLP_BINARY=yt-dlp
 FFMPEG_BINARY=ffmpeg
 ```
@@ -188,7 +193,7 @@ Make sure `yt-dlp` and `ffmpeg` are installed locally if you run without Docker.
 
 ## How music extraction works without API keys
 
-FMCord uses `yt-dlp`, a free open-source extractor, to resolve public URLs and search queries. For playback, FMCord starts `yt-dlp` as a child process and pipes the selected audio stream into FFmpeg. FFmpeg converts the audio into Discord voice-compatible raw PCM, and @discordjs/voice sends it to the voice channel.
+FMCord uses `yt-dlp`, a free open-source extractor, to resolve public URLs and search queries. For faster playback, FMCord tries to reuse the direct stream URL returned by yt-dlp metadata resolution. If a direct URL is unavailable or expires, it falls back to yt-dlp + FFmpeg piping. FFmpeg converts the audio into Discord voice-compatible raw PCM, and @discordjs/voice sends it to the voice channel.
 
 No YouTube Data API key is used. No Spotify API key is used. No SoundCloud API key is used. No paid provider is required.
 
@@ -253,9 +258,13 @@ Install FFmpeg locally or set `FFMPEG_BINARY` in `.env` to its full path.
 
 Use `/disconnect` from the same channel, or restart the bot if Discord left a stale connection.
 
+### Voice channel status does not show
+
+Make sure the bot has **Set Voice Channel Status** permission in that voice channel. Discord also requires **Manage Channels** if the bot is trying to set status while not connected, but FMCord updates status only while connected. You can disable this feature with `ENABLE_VOICE_STATUS=false`.
+
 ### Permission errors
 
-Invite the bot with these permissions: View Channels, Send Messages, Embed Links, Use Slash Commands, Connect, Speak, and Use Voice Activity.
+Invite the bot with these permissions: View Channels, Send Messages, Embed Links, Use Slash Commands, Connect, Speak, Use Voice Activity, and Set Voice Channel Status. The status permission is optional but needed for the `🎵 song title` voice status.
 
 ## FAQ
 
