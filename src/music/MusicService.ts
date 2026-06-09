@@ -24,12 +24,12 @@ import { formatTime } from "../utils/formatTime";
 import { compactTrackLink, infoEmbed, musicEmbed, safeText, statusPill, successEmbed, warningEmbed } from "../utils/embeds";
 import { getMemberVoiceChannel, assertVoicePermissions, UserFacingError } from "../utils/permissions";
 import { Queue } from "./Queue";
-import { makeProgressBar } from "./progress";
+import { makeProgressBar, makeProgressCodeBlock } from "./progress";
 import { LoopMode, Track } from "./Track";
 import { YtdlpExtractor } from "./YtdlpExtractor";
 
 const VOICE_STATUS_PERMISSION = 1n << 48n;
-const NOW_PLAYING_UPDATE_SECONDS = 20;
+const NOW_PLAYING_UPDATE_SECONDS = config.livePanelUpdateSeconds;
 
 interface SendableChannel {
   send: (options: { embeds: EmbedBuilder[] }) => Promise<Message | unknown>;
@@ -519,7 +519,7 @@ export class MusicService {
 
     const embed = musicEmbed("🎧 Now playing", `### ${compactTrackLink(current.title, current.url, 180)}`)
       .addFields(
-        { name: "Progress", value: makeProgressBar(elapsedSeconds, current.durationSeconds), inline: false },
+        { name: "Progress", value: makeProgressCodeBlock(elapsedSeconds, current.durationSeconds), inline: false },
         { name: "⏳ Time left", value: statusPill(remaining), inline: true },
         { name: "⏱️ Duration", value: statusPill(current.duration), inline: true },
         { name: "📜 Upcoming", value: statusPill(`${session.queue.size()} song${session.queue.size() === 1 ? "" : "s"}`), inline: true },
@@ -532,7 +532,7 @@ export class MusicService {
       );
 
     if (current.thumbnail) embed.setThumbnail(current.thumbnail);
-    embed.setFooter({ text: "FMCord • live panel edits itself, no duplicate now-playing spam" });
+    embed.setFooter({ text: "FMCord • single live panel • edits every second" });
     return embed;
   }
 
@@ -553,17 +553,81 @@ export class MusicService {
     );
 
     for (const channelId of channelIds) {
+      const adopted = await this.tryAdoptExistingNowPlayingMessage(session, channelId, embed);
+      if (adopted) return;
+    }
+
+    for (const channelId of channelIds) {
       try {
         const channel = await this.fetchSendableChannel(channelId);
         if (!channel) continue;
         const sent = await channel.send({ embeds: [embed] });
-        if (sent instanceof Message) {
+        if (this.isDiscordMessage(sent)) {
           session.nowPlayingChannelId = sent.channelId;
           session.nowPlayingMessageId = sent.id;
         }
         return;
       } catch (error) {
         logger.debug(`Could not send now-playing panel to channel ${channelId}`, error instanceof Error ? error.message : String(error));
+      }
+    }
+  }
+
+  private async tryAdoptExistingNowPlayingMessage(session: GuildSession, channelId: string, embed: EmbedBuilder): Promise<boolean> {
+    try {
+      const channel = await this.fetchSendableChannel(channelId);
+      const messagesApi = (channel as { messages?: { fetch?: (options: unknown) => Promise<unknown> } } | null)?.messages;
+      if (!messagesApi?.fetch) return false;
+
+      const result = await messagesApi.fetch({ limit: 25 });
+      const candidates = this.messageArray(result).filter((message) => this.isFMCordNowPlayingMessage(message));
+      const target = candidates[0];
+      if (!target) return false;
+
+      await target.edit({ embeds: [embed] });
+      session.nowPlayingChannelId = target.channelId;
+      session.nowPlayingMessageId = target.id;
+
+      void this.deleteDuplicateNowPlayingMessages(candidates.slice(1), target.id);
+      return true;
+    } catch (error) {
+      logger.debug(`Could not adopt existing now-playing panel in channel ${channelId}`, error instanceof Error ? error.message : String(error));
+      return false;
+    }
+  }
+
+  private messageArray(value: unknown): Message[] {
+    if (this.isDiscordMessage(value)) return [value];
+    if (value && typeof value === "object" && "values" in value && typeof (value as { values?: unknown }).values === "function") {
+      return Array.from((value as { values: () => Iterable<unknown> }).values()).filter((message): message is Message => this.isDiscordMessage(message));
+    }
+    return [];
+  }
+
+  private isDiscordMessage(value: unknown): value is Message {
+    return typeof value === "object" && value !== null && "id" in value && "channelId" in value && "edit" in value && "embeds" in value;
+  }
+
+  private isFMCordNowPlayingMessage(message: Message): boolean {
+    if (message.author.id !== this.client?.user?.id) return false;
+
+    return message.embeds.some((embed) => {
+      const title = embed.title?.toLowerCase() ?? "";
+      const footer = embed.footer?.text?.toLowerCase() ?? "";
+      const description = embed.description?.toLowerCase() ?? "";
+      const isNowPlaying = title.includes("now playing") || description.includes("now playing");
+      const isFMCord = footer.includes("fmcord") || message.author.username.toLowerCase().includes("fmcord");
+      return isNowPlaying && isFMCord;
+    });
+  }
+
+  private async deleteDuplicateNowPlayingMessages(messages: Message[], keepId: string): Promise<void> {
+    for (const message of messages) {
+      if (message.id === keepId) continue;
+      try {
+        await message.delete();
+      } catch (error) {
+        logger.debug(`Could not delete duplicate now-playing panel ${message.id}`, error instanceof Error ? error.message : String(error));
       }
     }
   }
@@ -579,7 +643,7 @@ export class MusicService {
     try {
       const channel = await this.fetchSendableChannel(channelId);
       const message = await channel?.messages?.fetch(messageId);
-      if (!message) return false;
+      if (!this.isDiscordMessage(message)) return false;
       await message.edit({ embeds: [embed] });
       return true;
     } catch (error) {

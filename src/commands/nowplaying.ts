@@ -18,7 +18,7 @@ export const nowPlayingCommand: Command = {
 
       await musicService.refreshNowPlayingPanel(guildId);
       await interaction.reply({
-        embeds: [infoEmbed("Now-playing panel refreshed", "I updated the existing now-playing embed in the voice channel chat instead of sending a new public one."), embed],
+        embeds: [infoEmbed("Now-playing panel refreshed", "I updated the existing now-playing embed in the voice channel chat instead of sending another public embed.")],
         flags: MessageFlags.Ephemeral
       });
     } catch (error) {

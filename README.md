@@ -104,6 +104,7 @@ YTDLP_BINARY=yt-dlp
 FFMPEG_BINARY=ffmpeg
 ENABLE_VOICE_STATUS=true
 VOICE_STATUS_MAX_LENGTH=80
+LIVE_PANEL_UPDATE_SECONDS=1
 ```
 
 ### Slash command registration behavior
@@ -311,15 +312,15 @@ If a direct stream URL is missing or expired, FMCord safely falls back to resolv
 
 The embeds were also redesigned with clearer status fields, better queue formatting, source/volume/loop info, and a visible playback mode indicator.
 
-## v1.3.0 Live Panel Notes
+## v1.4.0 Live Panel Notes
 
-This build changes the now-playing behavior so FMCord keeps one live panel per server and edits it instead of sending a new public now-playing embed every time. The panel updates when:
+This build keeps one live now-playing panel per server and edits it instead of sending duplicate public now-playing embeds. If FMCord restarts or loses the saved message ID, it scans recent bot messages, adopts the latest existing now-playing panel, edits it, and removes older duplicate FMCord panels when possible. The panel updates when:
 
 - a new song starts
 - `/volume` changes volume
 - `/loop` changes loop mode
 - the queue changes through `/play`, `/clear`, `/remove`, or `/shuffle`
 - playback is paused or resumed
-- the periodic timer refreshes progress and time left
+- the 1-second periodic timer refreshes progress and time left
 
-The panel shows the current track, progress bar, time left, total duration, upcoming song count, loop mode, volume, playback state, requester, source, and voice channel. `/join` and `/leave` were added, and FMCord stays locked to one voice channel per server until it leaves.
+The panel shows the current track, a codeblock progress bar, time left, total duration, upcoming song count, loop mode, volume, playback state, requester, source, and voice channel. `/join` and `/leave` are available, and FMCord stays locked to one voice channel per server until it leaves. You can change the refresh speed with `LIVE_PANEL_UPDATE_SECONDS`; the default is `1`.

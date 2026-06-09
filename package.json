@@ -1,7 +1,7 @@
 {
   "name": "fmcord",
-  "version": "1.3.0",
-  "description": "FMCord - a fast lightweight slash-command Discord music bot with editable now-playing panels, voice channel status, yt-dlp direct stream URLs, and FFmpeg.",
+  "version": "1.4.0",
+  "description": "FMCord - a fast lightweight slash-command Discord music bot with single editable now-playing panel, 1-second live progress, voice channel status, yt-dlp direct stream URLs, and FFmpeg.",
   "license": "MIT",
   "main": "dist/index.js",
   "scripts": {
