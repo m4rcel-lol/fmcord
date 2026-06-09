@@ -1,0 +1,7 @@
+services:
+  fmcord:
+    container_name: fmcord
+    build: .
+    env_file:
+      - .env
+    restart: unless-stopped
