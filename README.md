@@ -282,3 +282,26 @@ Yes. Change `MAX_PLAYLIST_SIZE`, but large playlists can be slower and more like
 ## License
 
 MIT
+
+
+## Docker build note
+
+This project intentionally lets Docker generate dependencies from `package.json` during the image build. If you copied an older ZIP that included a `package-lock.json` generated on another registry, remove it before building:
+
+```bash
+rm -f package-lock.json
+docker compose build --no-cache
+```
+
+If you see `npm error Exit handler never called!` during Docker build, rebuild with the included Dockerfile, which uses `npm install --registry=https://registry.npmjs.org/` inside the build stage.
+
+## v1.1.0 Performance Notes
+
+This build improves `/play` startup speed in two ways:
+
+1. **Parallel resolving + voice connect** — FMCord now connects to voice while yt-dlp resolves the requested track, instead of doing those steps one after another.
+2. **Direct stream URL playback** — when yt-dlp returns a fresh direct media URL during metadata extraction, FMCord sends that URL straight into FFmpeg. This avoids spawning yt-dlp a second time for most single-track playback.
+
+If a direct stream URL is missing or expired, FMCord safely falls back to resolving a fresh stream URL with yt-dlp before playback. This fallback keeps the bot reliable when YouTube or another source changes its stream URLs.
+
+The embeds were also redesigned with clearer status fields, better queue formatting, source/volume/loop info, and a visible playback mode indicator.

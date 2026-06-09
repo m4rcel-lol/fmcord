@@ -1,14 +1,18 @@
-FROM node:22-alpine AS build
+FROM node:20-alpine AS build
 WORKDIR /app
 
-COPY package*.json ./
-RUN npm ci
+ENV npm_config_audit=false \
+    npm_config_fund=false \
+    npm_config_update_notifier=false
+
+COPY package.json ./
+RUN npm install --include=dev --registry=https://registry.npmjs.org/
 
 COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build && npm prune --omit=dev
 
-FROM node:22-alpine AS runtime
+FROM node:20-alpine AS runtime
 WORKDIR /app
 
 RUN apk add --no-cache ffmpeg python3 py3-pip yt-dlp \

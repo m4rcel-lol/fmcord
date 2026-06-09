@@ -1,6 +1,6 @@
 import { SlashCommandBuilder } from "discord.js";
 import { musicService } from "../music/MusicService";
-import { errorEmbed, safeText, successEmbed } from "../utils/embeds";
+import { compactTrackLink, errorEmbed, musicEmbed, safeText, statusPill } from "../utils/embeds";
 import { UserFacingError } from "../utils/permissions";
 import { Command } from "./Command";
 
@@ -17,20 +17,29 @@ export const playCommand: Command = {
 
     try {
       await interaction.deferReply();
+      await interaction.editReply({
+        embeds: [
+          musicEmbed("🔎 Finding your track…", `Searching for **${safeText(query, 120)}** and preparing the voice connection.`)
+            .addFields({ name: "Status", value: statusPill("Resolving with yt-dlp"), inline: true })
+        ]
+      });
+
       const result = await musicService.play(interaction, query);
       const first = result.tracks[0];
       if (!first) throw new UserFacingError("No playable results were found.");
 
-      const embed = successEmbed(
-        result.startedImmediately ? "Starting playback" : "Added to queue",
-        result.tracks.length === 1
-          ? `[${safeText(first.title, 180)}](${first.url})`
-          : `Added **${result.tracks.length}** tracks from a playlist.`
-      ).addFields(
-        { name: "Duration", value: first.duration, inline: true },
-        { name: "Requested by", value: `<@${first.requestedBy}>`, inline: true },
-        { name: "Position", value: result.queuePosition === 0 ? "Now playing" : `#${result.queuePosition}`, inline: true },
-        { name: "Source", value: safeText(first.source, 64), inline: true }
+      const title = result.startedImmediately ? "▶️ Now playing" : "➕ Added to queue";
+      const description = result.tracks.length === 1
+        ? `### ${compactTrackLink(first.title, first.url, 190)}`
+        : `### Added **${result.tracks.length}** tracks\nFirst track: ${compactTrackLink(first.title, first.url, 150)}`;
+
+      const embed = musicEmbed(title, description).addFields(
+        { name: "⏱️ Duration", value: first.duration, inline: true },
+        { name: "👤 Requested by", value: `<@${first.requestedBy}>`, inline: true },
+        { name: "📍 Position", value: result.queuePosition === 0 ? statusPill("Now playing") : statusPill(`#${result.queuePosition}`), inline: true },
+        { name: "🌐 Source", value: statusPill(safeText(first.source, 64)), inline: true },
+        { name: "📜 Queue", value: statusPill(`${result.queueLength} upcoming`), inline: true },
+        { name: "⚡ Playback", value: statusPill(first.streamUrl ? "Fast stream URL ready" : "Will resolve on start"), inline: true }
       );
 
       if (first.thumbnail) embed.setThumbnail(first.thumbnail);

@@ -18,7 +18,7 @@ import {
 } from "discord.js";
 import { config } from "../config";
 import { logger } from "../logger";
-import { errorEmbed, infoEmbed, safeText, successEmbed, warningEmbed } from "../utils/embeds";
+import { compactTrackLink, errorEmbed, infoEmbed, musicEmbed, safeText, statusPill, successEmbed, warningEmbed } from "../utils/embeds";
 import { getMemberVoiceChannel, assertVoicePermissions, UserFacingError } from "../utils/permissions";
 import { Queue } from "./Queue";
 import { makeProgressBar } from "./progress";
@@ -48,6 +48,7 @@ export interface PlayResult {
   tracks: Track[];
   startedImmediately: boolean;
   queuePosition: number;
+  queueLength: number;
 }
 
 export interface NowPlayingInfo {
@@ -77,13 +78,15 @@ export class MusicService {
     assertVoicePermissions(interaction, voiceChannel);
 
     const session = this.getOrCreateSession(interaction.guild.id);
-    await this.ensureConnection(interaction, voiceChannel, session);
     session.textChannelId = interaction.channelId;
 
-    const tracks = await this.extractor.resolve(query, {
+    const connectionPromise = this.ensureConnection(interaction, voiceChannel, session);
+    const tracksPromise = this.extractor.resolve(query, {
       requestedBy: interaction.user.id,
       requesterTag: interaction.user.tag
     });
+
+    const [tracks] = await Promise.all([tracksPromise, connectionPromise]);
 
     if (tracks.length === 0) throw new UserFacingError("No playable results were found.");
     if (session.queue.size() + tracks.length > config.maxQueueSize) {
@@ -101,7 +104,7 @@ export class MusicService {
       await this.startNext(session);
     }
 
-    return { tracks, startedImmediately, queuePosition };
+    return { tracks, startedImmediately, queuePosition, queueLength: session.queue.size() };
   }
 
   public pause(guildId: string): boolean {
@@ -363,11 +366,14 @@ export class MusicService {
 
       await this.sendToTextChannel(
         session,
-        infoEmbed("Now playing", `[${safeText(next.title, 180)}](${next.url})`)
+        musicEmbed("▶️ Now playing", `### ${compactTrackLink(next.title, next.url, 180)}`)
           .addFields(
-            { name: "Duration", value: next.duration, inline: true },
-            { name: "Requested by", value: `<@${next.requestedBy}>`, inline: true },
-            { name: "Source", value: safeText(next.source, 64), inline: true }
+            { name: "⏱️ Duration", value: next.duration, inline: true },
+            { name: "👤 Requested by", value: `<@${next.requestedBy}>`, inline: true },
+            { name: "🌐 Source", value: statusPill(safeText(next.source, 64)), inline: true },
+            { name: "🔁 Loop", value: statusPill(session.loopMode), inline: true },
+            { name: "🔊 Volume", value: statusPill(`${session.volume}%`), inline: true },
+            { name: "📜 Queue", value: statusPill(`${session.queue.size()} upcoming`), inline: true }
           )
           .setThumbnail(next.thumbnail ?? null)
       );

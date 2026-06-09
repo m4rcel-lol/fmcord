@@ -1,6 +1,6 @@
 import { SlashCommandBuilder } from "discord.js";
 import { musicService } from "../music/MusicService";
-import { errorEmbed, infoEmbed, safeText } from "../utils/embeds";
+import { compactTrackLink, errorEmbed, musicEmbed, safeText, statusPill } from "../utils/embeds";
 import { Command } from "./Command";
 
 export const nowPlayingCommand: Command = {
@@ -15,14 +15,15 @@ export const nowPlayingCommand: Command = {
       return;
     }
 
-    const embed = infoEmbed("Now playing", `[${safeText(now.track.title, 180)}](${now.track.url})`)
+    const embed = musicEmbed("🎧 Now playing", `### ${compactTrackLink(now.track.title, now.track.url, 190)}`)
       .addFields(
-        { name: "Duration", value: now.track.duration, inline: true },
-        { name: "Elapsed", value: now.progress, inline: false },
-        { name: "Requested by", value: `<@${now.track.requestedBy}>`, inline: true },
-        { name: "Loop", value: now.loopMode, inline: true },
-        { name: "Volume", value: `${now.volume}%`, inline: true },
-        { name: "Source", value: safeText(now.track.source, 64), inline: true }
+        { name: "Progress", value: now.progress, inline: false },
+        { name: "⏱️ Duration", value: now.track.duration, inline: true },
+        { name: "👤 Requested by", value: `<@${now.track.requestedBy}>`, inline: true },
+        { name: "🌐 Source", value: statusPill(safeText(now.track.source, 64)), inline: true },
+        { name: "🔁 Loop", value: statusPill(now.loopMode), inline: true },
+        { name: "🔊 Volume", value: statusPill(`${now.volume}%`), inline: true },
+        { name: "⚡ Stream", value: statusPill(now.track.streamUrl ? "Direct" : "Extractor fallback"), inline: true }
       );
 
     if (now.track.thumbnail) embed.setThumbnail(now.track.thumbnail);
