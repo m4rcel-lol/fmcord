@@ -13,12 +13,15 @@ import {
 import {
   ChatInputCommandInteraction,
   Client,
+  EmbedBuilder,
   GuildMember,
+  Message,
   VoiceBasedChannel
 } from "discord.js";
 import { config } from "../config";
 import { logger } from "../logger";
-import { compactTrackLink, errorEmbed, infoEmbed, musicEmbed, safeText, statusPill, successEmbed, warningEmbed } from "../utils/embeds";
+import { formatTime } from "../utils/formatTime";
+import { compactTrackLink, infoEmbed, musicEmbed, safeText, statusPill, successEmbed, warningEmbed } from "../utils/embeds";
 import { getMemberVoiceChannel, assertVoicePermissions, UserFacingError } from "../utils/permissions";
 import { Queue } from "./Queue";
 import { makeProgressBar } from "./progress";
@@ -26,6 +29,14 @@ import { LoopMode, Track } from "./Track";
 import { YtdlpExtractor } from "./YtdlpExtractor";
 
 const VOICE_STATUS_PERMISSION = 1n << 48n;
+const NOW_PLAYING_UPDATE_SECONDS = 20;
+
+interface SendableChannel {
+  send: (options: { embeds: EmbedBuilder[] }) => Promise<Message | unknown>;
+  messages?: {
+    fetch: (messageId: string) => Promise<Message>;
+  };
+}
 
 function makeVoiceStatus(title: string): string {
   const prefix = "🎵 ";
@@ -50,6 +61,9 @@ interface GuildSession {
   commandChannelId: string | null;
   voiceChannelId: string | null;
   lastVoiceStatus: string | null;
+  nowPlayingChannelId: string | null;
+  nowPlayingMessageId: string | null;
+  nowPlayingTimer: NodeJS.Timeout | null;
   idleTimer: NodeJS.Timeout | null;
   emptyTimer: NodeJS.Timeout | null;
   cleanupStream: (() => void) | null;
@@ -66,12 +80,19 @@ export interface PlayResult {
   queueLength: number;
 }
 
+export interface JoinResult {
+  channelId: string;
+  channelName: string;
+}
+
 export interface NowPlayingInfo {
   track: Track;
   elapsedSeconds: number;
+  remainingSeconds: number | null;
   progress: string;
   loopMode: LoopMode;
   volume: number;
+  queueLength: number;
 }
 
 export class MusicService {
@@ -85,6 +106,26 @@ export class MusicService {
 
   public getSession(guildId: string): GuildSession | null {
     return this.sessions.get(guildId) ?? null;
+  }
+
+  public async join(interaction: ChatInputCommandInteraction): Promise<JoinResult> {
+    if (!interaction.guild) throw new UserFacingError("This command can only be used inside a server.");
+    const voiceChannel = getMemberVoiceChannel(interaction);
+    assertVoicePermissions(interaction, voiceChannel);
+
+    const session = this.getOrCreateSession(interaction.guild.id);
+    session.commandChannelId = interaction.channelId;
+    session.textChannelId = voiceChannel.id;
+
+    await this.ensureConnection(interaction, voiceChannel, session);
+    this.clearIdleTimer(session);
+    this.clearEmptyTimer(session);
+
+    return { channelId: voiceChannel.id, channelName: voiceChannel.name };
+  }
+
+  public leave(guildId: string): void {
+    this.disconnect(guildId);
   }
 
   public async play(interaction: ChatInputCommandInteraction, query: string): Promise<PlayResult> {
@@ -118,6 +159,8 @@ export class MusicService {
 
     if (!session.current && session.player.state.status !== AudioPlayerStatus.Playing) {
       await this.startNext(session);
+    } else {
+      void this.upsertNowPlayingMessage(session);
     }
 
     return { tracks, startedImmediately, queuePosition, queueLength: session.queue.size() };
@@ -126,7 +169,10 @@ export class MusicService {
   public pause(guildId: string): boolean {
     const session = this.requireSession(guildId);
     const paused = session.player.pause(true);
-    if (paused) session.pausedAt = Date.now();
+    if (paused) {
+      session.pausedAt = Date.now();
+      void this.upsertNowPlayingMessage(session);
+    }
     return paused;
   }
 
@@ -136,7 +182,9 @@ export class MusicService {
       session.totalPausedMs += Date.now() - session.pausedAt;
       session.pausedAt = null;
     }
-    return session.player.unpause();
+    const resumed = session.player.unpause();
+    if (resumed) void this.upsertNowPlayingMessage(session);
+    return resumed;
   }
 
   public skip(guildId: string): void {
@@ -153,13 +201,16 @@ export class MusicService {
     session.skipRequested = true;
     session.cleanupStream?.();
     session.cleanupStream = null;
+    this.clearNowPlayingTimer(session);
     session.player.stop(true);
     void this.setVoiceChannelStatus(session, null);
+    void this.editNowPlayingNotice(session, "⏹️ Playback stopped", "Playback stopped and the queue was cleared.");
     this.scheduleIdleDisconnect(session);
   }
 
   public disconnect(guildId: string): void {
     const session = this.requireSession(guildId);
+    void this.editNowPlayingNotice(session, "👋 Disconnected", "I left the voice channel and cleared the queue.");
     this.destroySession(session);
   }
 
@@ -167,6 +218,7 @@ export class MusicService {
     const session = this.requireSession(guildId);
     const count = session.queue.size();
     session.queue.clear();
+    void this.upsertNowPlayingMessage(session);
     return count;
   }
 
@@ -174,6 +226,7 @@ export class MusicService {
     const session = this.requireSession(guildId);
     const count = session.queue.size();
     session.queue.shuffle();
+    void this.upsertNowPlayingMessage(session);
     return count;
   }
 
@@ -181,6 +234,7 @@ export class MusicService {
     const session = this.requireSession(guildId);
     const removed = session.queue.remove(position);
     if (!removed) throw new UserFacingError("That queue position does not exist.");
+    void this.upsertNowPlayingMessage(session);
     return removed;
   }
 
@@ -189,11 +243,13 @@ export class MusicService {
     session.volume = volume;
     const resource = session.player.state.status !== AudioPlayerStatus.Idle ? session.player.state.resource : null;
     resource?.volume?.setVolume(volume / 100);
+    void this.upsertNowPlayingMessage(session);
   }
 
   public setLoopMode(guildId: string, mode: LoopMode): void {
     const session = this.requireSession(guildId);
     session.loopMode = mode;
+    void this.upsertNowPlayingMessage(session);
   }
 
   public getQueue(guildId: string): readonly Track[] {
@@ -216,17 +272,32 @@ export class MusicService {
     const session = this.sessions.get(guildId);
     if (!session?.current) return null;
 
-    const now = session.pausedAt ?? Date.now();
-    const elapsedMs = session.currentStartedAt ? now - session.currentStartedAt - session.totalPausedMs : 0;
-    const elapsedSeconds = Math.max(0, Math.floor(elapsedMs / 1000));
+    const elapsedSeconds = this.getElapsedSeconds(session);
+    const remainingSeconds = session.current.durationSeconds
+      ? Math.max(0, session.current.durationSeconds - elapsedSeconds)
+      : null;
 
     return {
       track: session.current,
       elapsedSeconds,
+      remainingSeconds,
       progress: makeProgressBar(elapsedSeconds, session.current.durationSeconds),
       loopMode: session.loopMode,
-      volume: session.volume
+      volume: session.volume,
+      queueLength: session.queue.size()
     };
+  }
+
+  public createNowPlayingEmbed(guildId: string): EmbedBuilder | null {
+    const session = this.sessions.get(guildId);
+    if (!session?.current) return null;
+    return this.buildNowPlayingEmbed(session);
+  }
+
+  public async refreshNowPlayingPanel(guildId: string): Promise<void> {
+    const session = this.requireSession(guildId);
+    if (!session.current) throw new UserFacingError("Nothing is playing right now.");
+    await this.upsertNowPlayingMessage(session);
   }
 
   public ensureUserInSameVoice(interaction: ChatInputCommandInteraction): void {
@@ -238,7 +309,7 @@ export class MusicService {
     const userChannelId = member?.voice.channelId;
     if (!userChannelId) throw new UserFacingError("You must be in my voice channel to control playback.");
     if (userChannelId !== session.voiceChannelId) {
-      throw new UserFacingError("You must be in the same voice channel as me to control playback.");
+      throw new UserFacingError("You must be in the same voice channel as me to control playback. FMCord is limited to one voice channel per server.");
     }
   }
 
@@ -275,6 +346,9 @@ export class MusicService {
       commandChannelId: null,
       voiceChannelId: null,
       lastVoiceStatus: null,
+      nowPlayingChannelId: null,
+      nowPlayingMessageId: null,
+      nowPlayingTimer: null,
       idleTimer: null,
       emptyTimer: null,
       cleanupStream: null,
@@ -301,7 +375,7 @@ export class MusicService {
 
   private requireSession(guildId: string): GuildSession {
     const session = this.sessions.get(guildId);
-    if (!session) throw new UserFacingError("I am not playing anything in this server.");
+    if (!session) throw new UserFacingError("I am not connected or playing anything in this server.");
     return session;
   }
 
@@ -312,7 +386,7 @@ export class MusicService {
   ): Promise<void> {
     const existing = session.connection ?? getVoiceConnection(channel.guild.id) ?? null;
     if (existing && session.voiceChannelId && session.voiceChannelId !== channel.id) {
-      throw new UserFacingError("I am already connected to another voice channel in this server.");
+      throw new UserFacingError("I am already connected to another voice channel in this server. Use `/leave` from my current channel first.");
     }
 
     if (existing && existing.state.status !== VoiceConnectionStatus.Destroyed) {
@@ -364,7 +438,9 @@ export class MusicService {
     const next = session.queue.shift();
     if (!next) {
       session.current = null;
+      this.clearNowPlayingTimer(session);
       void this.setVoiceChannelStatus(session, null);
+      void this.editNowPlayingNotice(session, "✅ Queue finished", "There are no upcoming tracks. I will leave after the idle timeout unless more music is added.");
       this.scheduleIdleDisconnect(session);
       return;
     }
@@ -386,20 +462,8 @@ export class MusicService {
       resource.volume?.setVolume(session.volume / 100);
       session.player.play(resource);
       await this.setVoiceChannelStatus(session, makeVoiceStatus(next.title));
-
-      await this.sendToTextChannel(
-        session,
-        musicEmbed("▶️ Now playing", `### ${compactTrackLink(next.title, next.url, 180)}`)
-          .addFields(
-            { name: "⏱️ Duration", value: next.duration, inline: true },
-            { name: "👤 Requested by", value: `<@${next.requestedBy}>`, inline: true },
-            { name: "🌐 Source", value: statusPill(safeText(next.source, 64)), inline: true },
-            { name: "🔁 Loop", value: statusPill(session.loopMode), inline: true },
-            { name: "🔊 Volume", value: statusPill(`${session.volume}%`), inline: true },
-            { name: "📜 Queue", value: statusPill(`${session.queue.size()} upcoming`), inline: true }
-          )
-          .setThumbnail(next.thumbnail ?? null)
-      );
+      await this.upsertNowPlayingMessage(session);
+      this.startNowPlayingTimer(session);
     } catch (error) {
       logger.warn(`Could not start track in guild ${session.guildId}`, error instanceof Error ? error.message : String(error));
       await this.sendToTextChannel(
@@ -417,6 +481,7 @@ export class MusicService {
     session.cleanupStream = null;
 
     if (!finished) {
+      this.clearNowPlayingTimer(session);
       this.scheduleIdleDisconnect(session);
       return;
     }
@@ -432,6 +497,111 @@ export class MusicService {
     session.current = null;
     session.skipRequested = false;
     await this.startNext(session);
+  }
+
+  private getElapsedSeconds(session: GuildSession): number {
+    if (!session.currentStartedAt) return 0;
+    const now = session.pausedAt ?? Date.now();
+    const elapsedMs = now - session.currentStartedAt - session.totalPausedMs;
+    return Math.max(0, Math.floor(elapsedMs / 1000));
+  }
+
+  private buildNowPlayingEmbed(session: GuildSession): EmbedBuilder {
+    const current = session.current;
+    if (!current) return infoEmbed("Nothing playing", "There is no active track right now.");
+
+    const elapsedSeconds = this.getElapsedSeconds(session);
+    const remainingSeconds = current.durationSeconds
+      ? Math.max(0, current.durationSeconds - elapsedSeconds)
+      : null;
+    const remaining = current.isLive ? "Live" : remainingSeconds === null ? "Unknown" : formatTime(remainingSeconds);
+    const state = session.pausedAt || session.player.state.status === AudioPlayerStatus.Paused ? "Paused" : "Playing";
+
+    const embed = musicEmbed("🎧 Now playing", `### ${compactTrackLink(current.title, current.url, 180)}`)
+      .addFields(
+        { name: "Progress", value: makeProgressBar(elapsedSeconds, current.durationSeconds), inline: false },
+        { name: "⏳ Time left", value: statusPill(remaining), inline: true },
+        { name: "⏱️ Duration", value: statusPill(current.duration), inline: true },
+        { name: "📜 Upcoming", value: statusPill(`${session.queue.size()} song${session.queue.size() === 1 ? "" : "s"}`), inline: true },
+        { name: "🔁 Loop", value: statusPill(session.loopMode), inline: true },
+        { name: "🔊 Volume", value: statusPill(`${session.volume}%`), inline: true },
+        { name: "▶️ State", value: statusPill(state), inline: true },
+        { name: "👤 Requested by", value: `<@${current.requestedBy}>`, inline: true },
+        { name: "🌐 Source", value: statusPill(safeText(current.source, 64)), inline: true },
+        { name: "📍 Voice", value: session.voiceChannelId ? `<#${session.voiceChannelId}>` : "Unknown", inline: true }
+      );
+
+    if (current.thumbnail) embed.setThumbnail(current.thumbnail);
+    embed.setFooter({ text: "FMCord • live panel edits itself, no duplicate now-playing spam" });
+    return embed;
+  }
+
+  private async upsertNowPlayingMessage(session: GuildSession): Promise<void> {
+    if (!session.current || !this.client) return;
+
+    const embed = this.buildNowPlayingEmbed(session);
+
+    if (session.nowPlayingChannelId && session.nowPlayingMessageId) {
+      const edited = await this.tryEditMessage(session.nowPlayingChannelId, session.nowPlayingMessageId, embed);
+      if (edited) return;
+      session.nowPlayingChannelId = null;
+      session.nowPlayingMessageId = null;
+    }
+
+    const channelIds = [session.textChannelId, session.commandChannelId].filter(
+      (channelId, index, all): channelId is string => Boolean(channelId) && all.indexOf(channelId) === index
+    );
+
+    for (const channelId of channelIds) {
+      try {
+        const channel = await this.fetchSendableChannel(channelId);
+        if (!channel) continue;
+        const sent = await channel.send({ embeds: [embed] });
+        if (sent instanceof Message) {
+          session.nowPlayingChannelId = sent.channelId;
+          session.nowPlayingMessageId = sent.id;
+        }
+        return;
+      } catch (error) {
+        logger.debug(`Could not send now-playing panel to channel ${channelId}`, error instanceof Error ? error.message : String(error));
+      }
+    }
+  }
+
+  private async editNowPlayingNotice(session: GuildSession, title: string, description: string): Promise<void> {
+    this.clearNowPlayingTimer(session);
+    if (!session.nowPlayingChannelId || !session.nowPlayingMessageId) return;
+    const embed = infoEmbed(title, description);
+    await this.tryEditMessage(session.nowPlayingChannelId, session.nowPlayingMessageId, embed);
+  }
+
+  private async tryEditMessage(channelId: string, messageId: string, embed: EmbedBuilder): Promise<boolean> {
+    try {
+      const channel = await this.fetchSendableChannel(channelId);
+      const message = await channel?.messages?.fetch(messageId);
+      if (!message) return false;
+      await message.edit({ embeds: [embed] });
+      return true;
+    } catch (error) {
+      logger.debug(`Could not edit now-playing message ${messageId}`, error instanceof Error ? error.message : String(error));
+      return false;
+    }
+  }
+
+  private startNowPlayingTimer(session: GuildSession): void {
+    this.clearNowPlayingTimer(session);
+    session.nowPlayingTimer = setInterval(() => {
+      if (!session.current) {
+        this.clearNowPlayingTimer(session);
+        return;
+      }
+      void this.upsertNowPlayingMessage(session);
+    }, NOW_PLAYING_UPDATE_SECONDS * 1000);
+  }
+
+  private clearNowPlayingTimer(session: GuildSession): void {
+    if (session.nowPlayingTimer) clearInterval(session.nowPlayingTimer);
+    session.nowPlayingTimer = null;
   }
 
   private scheduleIdleDisconnect(session: GuildSession): void {
@@ -463,6 +633,7 @@ export class MusicService {
   private destroySession(session: GuildSession): void {
     this.clearIdleTimer(session);
     this.clearEmptyTimer(session);
+    this.clearNowPlayingTimer(session);
     session.queue.clear();
     session.current = null;
     session.cleanupStream?.();
@@ -481,7 +652,7 @@ export class MusicService {
     this.sessions.delete(session.guildId);
   }
 
-  private async sendToTextChannel(session: GuildSession, embed: ReturnType<typeof successEmbed>): Promise<void> {
+  private async sendToTextChannel(session: GuildSession, embed: EmbedBuilder): Promise<void> {
     if (!this.client) return;
 
     const channelIds = [session.textChannelId, session.commandChannelId].filter(
@@ -490,8 +661,8 @@ export class MusicService {
 
     for (const channelId of channelIds) {
       try {
-        const channel = await this.client.channels.fetch(channelId);
-        if (!channel || !this.canSend(channel)) continue;
+        const channel = await this.fetchSendableChannel(channelId);
+        if (!channel) continue;
         await channel.send({ embeds: [embed] });
         return;
       } catch (error) {
@@ -526,7 +697,14 @@ export class MusicService {
     }
   }
 
-  private canSend(channel: unknown): channel is { send: (options: { embeds: ReturnType<typeof successEmbed>[] }) => Promise<unknown> } {
+  private async fetchSendableChannel(channelId: string): Promise<SendableChannel | null> {
+    if (!this.client) return null;
+    const channel = await this.client.channels.fetch(channelId);
+    if (!this.canSend(channel)) return null;
+    return channel;
+  }
+
+  private canSend(channel: unknown): channel is SendableChannel {
     return typeof channel === "object" && channel !== null && "send" in channel && typeof (channel as { send?: unknown }).send === "function";
   }
 }

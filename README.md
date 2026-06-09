@@ -14,16 +14,14 @@ It uses slash commands only and does not require YouTube API keys, Spotify keys,
 - Other public sources when supported by yt-dlp
 - Per-server music sessions
 - Queue system
-- Pause, resume, skip, stop, disconnect
+- Join, leave, pause, resume, skip, stop, disconnect
 - Queue pages
-- Now playing embed with progress bar
+- Live now-playing panel that edits the same message instead of spamming duplicates
 - Volume control from 1 to 150
 - Loop off / track / queue
 - Shuffle, remove, clear
 - Idle disconnect
 - Empty voice channel disconnect
-- Public Now Playing messages in the voice channel chat
-- Voice channel status like `🎵 Song title...` while playing
 - Docker Compose deployment
 - Alpine Linux container
 - FFmpeg included
@@ -66,10 +64,10 @@ For local development:
    - Connect
    - Speak
    - Use Voice Activity
-   - Set Voice Channel Status
+   - Set Voice Channel Status *(optional, for the 🎵 song title voice status)*
 11. Open the generated invite URL and add the bot to your server.
 
-FMCord does not need Administrator permission. The **Set Voice Channel Status** permission is only needed for the optional voice channel status feature; playback still works without it.
+FMCord does not need Administrator permission.
 
 ## Required intents
 
@@ -102,10 +100,10 @@ MAX_PLAYLIST_SIZE=25
 IDLE_TIMEOUT_SECONDS=300
 LEAVE_EMPTY_CHANNEL_SECONDS=60
 ENABLE_GLOBAL_COMMANDS=false
-ENABLE_VOICE_STATUS=true
-VOICE_STATUS_MAX_LENGTH=80
 YTDLP_BINARY=yt-dlp
 FFMPEG_BINARY=ffmpeg
+ENABLE_VOICE_STATUS=true
+VOICE_STATUS_MAX_LENGTH=80
 ```
 
 ### Slash command registration behavior
@@ -174,14 +172,16 @@ Make sure `yt-dlp` and `ffmpeg` are installed locally if you run without Docker.
 
 | Command | Description |
 | --- | --- |
+| `/join` | Join your current voice channel without starting music. |
 | `/play query:<string>` | Play a song, playlist, direct audio URL, or search query. |
 | `/pause` | Pause playback. |
 | `/resume` | Resume playback. |
 | `/skip` | Skip the current track. |
 | `/stop` | Stop playback and clear the queue. |
 | `/disconnect` | Leave the voice channel and clear the queue. |
+| `/leave` | Leave the voice channel and clear the queue. |
 | `/queue page:<integer>` | Show the queue with pagination. |
-| `/nowplaying` | Show current track, elapsed time, progress, requester, loop mode, and volume. |
+| `/nowplaying` | Refresh the existing live now-playing panel; shows progress, time left, upcoming count, loop mode, and volume. |
 | `/volume value:<1-150>` | Set playback volume for the current server session. |
 | `/loop mode:<off\|track\|queue>` | Set loop mode. |
 | `/shuffle` | Shuffle upcoming tracks. |
@@ -193,7 +193,7 @@ Make sure `yt-dlp` and `ffmpeg` are installed locally if you run without Docker.
 
 ## How music extraction works without API keys
 
-FMCord uses `yt-dlp`, a free open-source extractor, to resolve public URLs and search queries. For faster playback, FMCord tries to reuse the direct stream URL returned by yt-dlp metadata resolution. If a direct URL is unavailable or expires, it falls back to yt-dlp + FFmpeg piping. FFmpeg converts the audio into Discord voice-compatible raw PCM, and @discordjs/voice sends it to the voice channel.
+FMCord uses `yt-dlp`, a free open-source extractor, to resolve public URLs and search queries. For playback, FMCord starts `yt-dlp` as a child process and pipes the selected audio stream into FFmpeg. FFmpeg converts the audio into Discord voice-compatible raw PCM, and @discordjs/voice sends it to the voice channel.
 
 No YouTube Data API key is used. No Spotify API key is used. No SoundCloud API key is used. No paid provider is required.
 
@@ -256,15 +256,11 @@ Install FFmpeg locally or set `FFMPEG_BINARY` in `.env` to its full path.
 
 ### Bot says it is already in another voice channel
 
-Use `/disconnect` from the same channel, or restart the bot if Discord left a stale connection.
-
-### Voice channel status does not show
-
-Make sure the bot has **Set Voice Channel Status** permission in that voice channel. Discord also requires **Manage Channels** if the bot is trying to set status while not connected, but FMCord updates status only while connected. You can disable this feature with `ENABLE_VOICE_STATUS=false`.
+FMCord is intentionally limited to one voice channel per server. Use `/leave` or `/disconnect` from the same channel, or restart the bot if Discord left a stale connection.
 
 ### Permission errors
 
-Invite the bot with these permissions: View Channels, Send Messages, Embed Links, Use Slash Commands, Connect, Speak, Use Voice Activity, and Set Voice Channel Status. The status permission is optional but needed for the `🎵 song title` voice status.
+Invite the bot with these permissions: View Channels, Send Messages, Embed Links, Use Slash Commands, Connect, Speak, and Use Voice Activity. Add **Set Voice Channel Status** if you want the voice channel to show `🎵 Song Title`.
 
 ## FAQ
 
@@ -314,3 +310,16 @@ This build improves `/play` startup speed in two ways:
 If a direct stream URL is missing or expired, FMCord safely falls back to resolving a fresh stream URL with yt-dlp before playback. This fallback keeps the bot reliable when YouTube or another source changes its stream URLs.
 
 The embeds were also redesigned with clearer status fields, better queue formatting, source/volume/loop info, and a visible playback mode indicator.
+
+## v1.3.0 Live Panel Notes
+
+This build changes the now-playing behavior so FMCord keeps one live panel per server and edits it instead of sending a new public now-playing embed every time. The panel updates when:
+
+- a new song starts
+- `/volume` changes volume
+- `/loop` changes loop mode
+- the queue changes through `/play`, `/clear`, `/remove`, or `/shuffle`
+- playback is paused or resumed
+- the periodic timer refreshes progress and time left
+
+The panel shows the current track, progress bar, time left, total duration, upcoming song count, loop mode, volume, playback state, requester, source, and voice channel. `/join` and `/leave` were added, and FMCord stays locked to one voice channel per server until it leaves.

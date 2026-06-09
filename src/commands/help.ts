@@ -3,14 +3,16 @@ import { infoEmbed } from "../utils/embeds";
 import { Command } from "./Command";
 
 const commandList = [
+  "`/join` Join your voice channel and lock FMCord there.",
   "`/play query:` Play a URL, playlist, direct audio file, or search query.",
   "`/pause` Pause playback.",
   "`/resume` Resume playback.",
   "`/skip` Skip the current track.",
   "`/stop` Stop playback and clear the queue.",
   "`/disconnect` Leave voice and clear the queue.",
+  "`/leave` Alias-style voice leave command.",
   "`/queue page:` Show upcoming tracks.",
-  "`/nowplaying` Show the active track and progress.",
+  "`/nowplaying` Refresh the live now-playing panel in the voice chat.",
   "`/volume value:` Set volume from 1 to 150.",
   "`/loop mode:` Set loop mode: off, track, or queue.",
   "`/shuffle` Shuffle upcoming tracks.",

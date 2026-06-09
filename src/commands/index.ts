@@ -3,6 +3,8 @@ import { clearCommand } from "./clear";
 import { Command } from "./Command";
 import { disconnectCommand } from "./disconnect";
 import { helpCommand } from "./help";
+import { joinCommand } from "./join";
+import { leaveCommand } from "./leave";
 import { loopCommand } from "./loop";
 import { nowPlayingCommand } from "./nowplaying";
 import { pauseCommand } from "./pause";
@@ -17,12 +19,14 @@ import { stopCommand } from "./stop";
 import { volumeCommand } from "./volume";
 
 export const commands: Command[] = [
+  joinCommand,
   playCommand,
   pauseCommand,
   resumeCommand,
   skipCommand,
   stopCommand,
   disconnectCommand,
+  leaveCommand,
   queueCommand,
   nowPlayingCommand,
   volumeCommand,
