@@ -2,7 +2,7 @@
 
 FMCord is a lightweight self-hosted Discord music bot built with TypeScript, discord.js v14, @discordjs/voice, yt-dlp, and FFmpeg.
 
-It uses slash commands only and does not require YouTube API keys, Spotify keys, SoundCloud keys, paid APIs, OAuth apps, cookies, or third-party music credentials. The only required secret is your Discord bot token.
+It uses slash commands only. The only required secret is your Discord bot token. Spotify metadata/input support is optional and uses Spotify Client Credentials when `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` are provided; Spotify audio is not streamed directly.
 
 ## Features
 
@@ -10,6 +10,9 @@ It uses slash commands only and does not require YouTube API keys, Spotify keys,
 - YouTube URL playback
 - YouTube search query playback
 - YouTube playlist support with a configurable max playlist size
+- Spotify track, album, and playlist links as metadata/input only
+- SoundCloud public links through yt-dlp
+- SoundCloud search with `sc: your search terms` or `soundcloud: your search terms`
 - Direct audio URL support for common audio formats
 - Other public sources when supported by yt-dlp
 - Per-server music sessions
@@ -36,6 +39,7 @@ For Docker deployment:
 - Docker Compose plugin
 - A Discord bot token
 - The Discord application client ID
+- Optional Spotify app Client ID and Client Secret for Spotify link metadata
 
 For local development:
 
@@ -105,6 +109,11 @@ FFMPEG_BINARY=ffmpeg
 ENABLE_VOICE_STATUS=true
 VOICE_STATUS_MAX_LENGTH=80
 LIVE_PANEL_UPDATE_SECONDS=1
+
+# Optional Spotify metadata/input support. Spotify audio is not streamed directly.
+SPOTIFY_CLIENT_ID=
+SPOTIFY_CLIENT_SECRET=
+SPOTIFY_MARKET=PL
 ```
 
 ### Slash command registration behavior
@@ -174,7 +183,7 @@ Make sure `yt-dlp` and `ffmpeg` are installed locally if you run without Docker.
 | Command | Description |
 | --- | --- |
 | `/join` | Join your current voice channel without starting music. |
-| `/play query:<string>` | Play a song, playlist, direct audio URL, or search query. |
+| `/play query:<string>` | Play YouTube/SoundCloud URLs, Spotify metadata links, direct audio URLs, `sc: search`, or normal search terms. |
 | `/pause` | Pause playback. |
 | `/resume` | Resume playback. |
 | `/skip` | Skip the current track. |
@@ -182,7 +191,7 @@ Make sure `yt-dlp` and `ffmpeg` are installed locally if you run without Docker.
 | `/disconnect` | Leave the voice channel and clear the queue. |
 | `/leave` | Leave the voice channel and clear the queue. |
 | `/queue page:<integer>` | Show the queue with pagination. |
-| `/nowplaying` | Refresh the existing live now-playing panel; shows progress, time left, upcoming count, loop mode, and volume. |
+| `/nowplaying` | Refresh the existing live now-playing panel; shows current track, upcoming count, loop mode, volume, state, source, and voice channel. |
 | `/volume value:<1-150>` | Set playback volume for the current server session. |
 | `/loop mode:<off\|track\|queue>` | Set loop mode. |
 | `/shuffle` | Shuffle upcoming tracks. |
@@ -196,7 +205,7 @@ Make sure `yt-dlp` and `ffmpeg` are installed locally if you run without Docker.
 
 FMCord uses `yt-dlp`, a free open-source extractor, to resolve public URLs and search queries. For playback, FMCord starts `yt-dlp` as a child process and pipes the selected audio stream into FFmpeg. FFmpeg converts the audio into Discord voice-compatible raw PCM, and @discordjs/voice sends it to the voice channel.
 
-No YouTube Data API key is used. No Spotify API key is used. No SoundCloud API key is used. No paid provider is required.
+No YouTube Data API key is used. SoundCloud links are handled through yt-dlp when public/resolvable. Spotify support is metadata-only: FMCord reads Spotify track/album/playlist info through the Web API if optional credentials are configured, then searches a public playable source with yt-dlp. No Spotify audio is downloaded or rebroadcast directly by the Spotify API integration.
 
 ## Notes about YouTube reliability
 
@@ -275,7 +284,11 @@ No. It only uses slash commands.
 
 ### Does FMCord support Spotify links?
 
-Not directly by Spotify API. If yt-dlp can resolve a public source, FMCord can try to play it. Spotify playback usually requires separate handling and is intentionally not included to keep the bot no-key and lightweight.
+Yes, as metadata/input. Add `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` to `.env`, then `/play` can accept Spotify track, album, and playlist links. FMCord does not stream Spotify audio directly. It converts Spotify metadata into a search query like `Artist - Track audio` and plays a matching public source through yt-dlp/FFmpeg.
+
+### Does FMCord support SoundCloud links?
+
+Yes. Public SoundCloud tracks and sets are passed to yt-dlp. You can also force SoundCloud search with `sc: song name` or `soundcloud: song name`.
 
 ### Does FMCord download songs to disk?
 
@@ -323,7 +336,7 @@ This build keeps one live now-playing panel per server and edits it instead of s
 - playback is paused or resumed
 - the 1-second periodic timer refreshes progress and time left
 
-The panel shows the current track, a codeblock progress bar, time left, total duration, upcoming song count, loop mode, volume, playback state, requester, source, and voice channel. `/join` and `/leave` are available, and FMCord stays locked to one voice channel per server until it leaves. You can change the refresh speed with `LIVE_PANEL_UPDATE_SECONDS`; the default is `1`.
+The panel shows the current track, total duration, upcoming song count, loop mode, volume, playback state, requester, source, and voice channel. `/join` and `/leave` are available, and FMCord stays locked to one voice channel per server until it leaves. You can change the refresh speed with `LIVE_PANEL_UPDATE_SECONDS`; the default is `1`.
 
 
 ## v1.7 patch notes
@@ -338,3 +351,12 @@ The panel shows the current track, a codeblock progress bar, time left, total du
 - Added custom tech emojis to `/about` when available: `:nodejs:`, `:typescript:`, `:ytdlp:`, and `:discord:`.
 - About command values place tech emojis after the text, for example `Node.js v20.x :nodejs:`.
 - Keeps Unicode fallbacks if custom emojis are unavailable.
+
+
+## v2.1 Spotify + SoundCloud metadata/input
+
+- Added Spotify track, album, and playlist link handling as metadata/input only.
+- Added optional `.env` values: `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`, and `SPOTIFY_MARKET`.
+- Added SoundCloud forced search support using `sc: search terms` or `soundcloud: search terms`.
+- Spotify items are converted into yt-dlp search targets, so Spotify audio is not streamed directly.
+- SoundCloud public links continue to use yt-dlp/FFmpeg streaming when yt-dlp can resolve them.

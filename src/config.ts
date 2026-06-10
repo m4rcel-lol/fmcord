@@ -37,5 +37,8 @@ export const config = {
   voiceStatusMaxLength: readNumber("VOICE_STATUS_MAX_LENGTH", 80, 20, 500),
   livePanelUpdateSeconds: readNumber("LIVE_PANEL_UPDATE_SECONDS", 1, 1, 30),
   ytdlpBinary: process.env.YTDLP_BINARY?.trim() || "yt-dlp",
-  ffmpegBinary: process.env.FFMPEG_BINARY?.trim() || "ffmpeg"
+  ffmpegBinary: process.env.FFMPEG_BINARY?.trim() || "ffmpeg",
+  spotifyClientId: process.env.SPOTIFY_CLIENT_ID?.trim() || undefined,
+  spotifyClientSecret: process.env.SPOTIFY_CLIENT_SECRET?.trim() || undefined,
+  spotifyMarket: process.env.SPOTIFY_MARKET?.trim() || undefined
 } as const;

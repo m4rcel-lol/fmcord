@@ -7,6 +7,7 @@ import { logger } from "../logger";
 import { formatTime } from "../utils/formatTime";
 import { Extractor, PlaybackStream, ResolveOptions } from "./Extractor";
 import { Track } from "./Track";
+import { SpotifyResolver } from "./SpotifyResolver";
 
 const execFileAsync = promisify(execFile);
 const DIRECT_AUDIO_RE = /\.(mp3|wav|flac|m4a|aac|ogg|opus|webm)(\?.*)?$/i;
@@ -51,6 +52,15 @@ function looksLikePlaylist(value: string): boolean {
   if (!isUrl(value)) return false;
   const lowered = value.toLowerCase();
   return lowered.includes("list=") || lowered.includes("/playlist") || lowered.includes("/sets/");
+}
+
+function extractorSearchTarget(value: string): boolean {
+  return /^(?:ytsearch|ytsearchdate|scsearch)\d*:/i.test(value);
+}
+
+function soundCloudSearchQuery(value: string): string | null {
+  const match = /^(?:sc|soundcloud)\s*:\s*(.+)$/i.exec(value.trim());
+  return match?.[1]?.trim() || null;
 }
 
 function looksLikeWebpageUrl(url: string): boolean {
@@ -134,10 +144,20 @@ function createTrack(info: YtdlpInfo, options: ResolveOptions): Track | null {
 
 export class YtdlpExtractor implements Extractor {
   private readonly cache = new Map<string, CachedResult>();
+  private readonly spotify = new SpotifyResolver();
 
   public async resolve(query: string, options: ResolveOptions): Promise<Track[]> {
     const cleanQuery = query.trim();
     if (!cleanQuery) throw new Error("Search query cannot be empty.");
+
+    if (this.spotify.isSpotifyInput(cleanQuery)) {
+      return this.spotify.resolve(cleanQuery, options);
+    }
+
+    const scQuery = soundCloudSearchQuery(cleanQuery);
+    if (scQuery) {
+      return this.resolveSingle(`scsearch1:${scQuery}`, options);
+    }
 
     if (isUrl(cleanQuery) && DIRECT_AUDIO_RE.test(cleanQuery)) {
       return [this.directTrack(cleanQuery, options)];
@@ -208,7 +228,7 @@ export class YtdlpExtractor implements Extractor {
   }
 
   private async resolveSingle(query: string, options: ResolveOptions): Promise<Track[]> {
-    const target = isUrl(query) ? query : `ytsearch1:${query}`;
+    const target = isUrl(query) || extractorSearchTarget(query) ? query : `ytsearch1:${query}`;
     const info = await this.runJson([
       "--no-playlist",
       "--default-search",
@@ -277,7 +297,9 @@ export class YtdlpExtractor implements Extractor {
       return track.streamUrl;
     }
 
-    if (DIRECT_AUDIO_RE.test(track.url)) return track.url;
+    const playbackTarget = track.playbackUrl ?? track.url;
+
+    if (DIRECT_AUDIO_RE.test(playbackTarget)) return playbackTarget;
 
     const { stdout } = await execFileAsync(config.ytdlpBinary, [
       "--no-warnings",
@@ -289,7 +311,7 @@ export class YtdlpExtractor implements Extractor {
       "-f",
       "bestaudio[ext=webm][acodec=opus]/bestaudio[ext=m4a]/bestaudio/best",
       "-g",
-      track.url
+      playbackTarget
     ], {
       timeout: 25_000,
       maxBuffer: 1024 * 1024

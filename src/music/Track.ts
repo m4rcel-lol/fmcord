@@ -18,6 +18,15 @@ export interface Track {
    */
   streamUrl?: string;
   streamExpiresAt?: number;
+
+  /**
+   * Optional extractor/search target used for playback when the public display URL
+   * points to a metadata source such as Spotify.
+   */
+  playbackUrl?: string;
+
+  /** Original metadata provider for display/debugging, e.g. Spotify. */
+  metadataSource?: string;
 }
 
 export type LoopMode = "off" | "track" | "queue";
