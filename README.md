@@ -300,7 +300,7 @@ Yes. Change `MAX_PLAYLIST_SIZE`, but large playlists can be slower and more like
 
 ## License
 
-MIT
+MIT — Copyright (c) 2026 Marcel R.
 
 
 ## Docker build note
