@@ -5,13 +5,24 @@ export type FMCordEmojiName =
   | "note_information"
   | "notes_song_title"
   | "error"
+  | "warning"
+  | "warn"
   | "nowplaying"
+  | "vinyl"
+  | "song"
   | "loading"
   | "nodejs"
   | "typescript"
   | "ytdlp"
   | "discord"
-  | "ffmpeg";
+  | "ffmpeg"
+  | "duration"
+  | "upcoming"
+  | "loop"
+  | "volume"
+  | "requested"
+  | "source"
+  | "voice";
 
 type UsableEmoji = {
   name: string | null;
@@ -22,14 +33,25 @@ const fallbackEmoji: Record<FMCordEmojiName, string> = {
   music: "🎵",
   note_information: "ℹ️",
   notes_song_title: "🎶",
-  error: "❌",
-  nowplaying: "▶️",
+  error: "⚠️",
+  warning: "⚠️",
+  warn: "⚠️",
+  nowplaying: "🎵",
+  vinyl: "🎵",
+  song: "🎵",
   loading: "⏳",
   nodejs: "🟢",
   typescript: "🔷",
   ytdlp: "📥",
   discord: "💬",
-  ffmpeg: "🎞️"
+  ffmpeg: "🎞️",
+  duration: "⏱️",
+  upcoming: "📜",
+  loop: "🔁",
+  volume: "🔊",
+  requested: "👤",
+  source: "🌐",
+  voice: "🔈"
 };
 
 let clientRef: Client | null = null;
@@ -48,7 +70,16 @@ export async function warmEmojiCache(): Promise<void> {
 }
 
 export function fmEmoji(name: FMCordEmojiName, guildId?: string | null): string {
-  return findCustomEmoji(name, guildId)?.toString() ?? fallbackEmoji[name];
+  const emojiName = resolveEmojiName(name);
+  return findCustomEmoji(emojiName, guildId)?.toString() ?? fallbackEmoji[emojiName];
+}
+
+function resolveEmojiName(name: FMCordEmojiName): FMCordEmojiName {
+  // The old internal names stay supported so older code paths do not break,
+  // but the visible custom emojis now resolve to :song: and :warn:.
+  if (name === "nowplaying" || name === "vinyl") return "song";
+  if (name === "error" || name === "warning") return "warn";
+  return name;
 }
 
 function findCustomEmoji(name: FMCordEmojiName, guildId?: string | null): UsableEmoji | null {

@@ -495,14 +495,14 @@ export class MusicService {
 
     const embed = nowPlayingEmbed(`### ${songTitlePrefix(session.guildId)} ${compactTrackLink(current.title, current.url, 180)}`, session.guildId)
       .addFields(
-        { name: `${fmEmoji("note_information", session.guildId)} Duration`, value: statusPill(current.duration), inline: true },
-        { name: `${fmEmoji("note_information", session.guildId)} Upcoming`, value: statusPill(`${session.queue.size()} song${session.queue.size() === 1 ? "" : "s"}`), inline: true },
-        { name: `${fmEmoji("music", session.guildId)} Loop`, value: statusPill(session.loopMode), inline: true },
-        { name: `${fmEmoji("music", session.guildId)} Volume`, value: statusPill(`${session.volume}%`), inline: true },
+        { name: `${fmEmoji("duration", session.guildId)} Duration`, value: statusPill(current.duration), inline: true },
+        { name: `${fmEmoji("upcoming", session.guildId)} Upcoming`, value: statusPill(`${session.queue.size()} song${session.queue.size() === 1 ? "" : "s"}`), inline: true },
+        { name: `${fmEmoji("loop", session.guildId)} Loop`, value: statusPill(session.loopMode), inline: true },
+        { name: `${fmEmoji("volume", session.guildId)} Volume`, value: statusPill(`${session.volume}%`), inline: true },
         { name: `${fmEmoji("nowplaying", session.guildId)} State`, value: statusPill(state), inline: true },
-        { name: `${fmEmoji("note_information", session.guildId)} Requested by`, value: `<@${current.requestedBy}>`, inline: true },
-        { name: `${fmEmoji("note_information", session.guildId)} Source`, value: statusPill(safeText(current.source, 64)), inline: true },
-        { name: `${fmEmoji("note_information", session.guildId)} Voice`, value: session.voiceChannelId ? `<#${session.voiceChannelId}>` : "Unknown", inline: true }
+        { name: `${fmEmoji("requested", session.guildId)} Requested by`, value: `<@${current.requestedBy}>`, inline: true },
+        { name: `${fmEmoji("source", session.guildId)} Source`, value: statusPill(safeText(current.source, 64)), inline: true },
+        { name: `${fmEmoji("voice", session.guildId)} Voice`, value: session.voiceChannelId ? `<#${session.voiceChannelId}>` : "Unknown", inline: true }
       );
 
     if (current.thumbnail) embed.setThumbnail(current.thumbnail);
