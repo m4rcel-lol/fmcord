@@ -6,10 +6,12 @@ export type FMCordEmojiName =
   | "notes_song_title"
   | "error"
   | "nowplaying"
+  | "loading"
   | "nodejs"
   | "typescript"
   | "ytdlp"
-  | "discord";
+  | "discord"
+  | "ffmpeg";
 
 type UsableEmoji = {
   name: string | null;
@@ -22,10 +24,12 @@ const fallbackEmoji: Record<FMCordEmojiName, string> = {
   notes_song_title: "🎶",
   error: "❌",
   nowplaying: "▶️",
+  loading: "⏳",
   nodejs: "🟢",
   typescript: "🔷",
   ytdlp: "📥",
-  discord: "💬"
+  discord: "💬",
+  ffmpeg: "🎞️"
 };
 
 let clientRef: Client | null = null;

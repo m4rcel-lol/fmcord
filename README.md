@@ -91,7 +91,7 @@ Edit `.env`:
 ```env
 DISCORD_TOKEN=your_discord_bot_token_here
 CLIENT_ID=your_application_client_id_here
-GUILD_ID=your_test_server_id_optional # this is optional
+GUILD_ID=your_test_server_id_optional
 NODE_ENV=production
 LOG_LEVEL=info
 DEFAULT_VOLUME=80

@@ -1,6 +1,6 @@
 import { MessageFlags, SlashCommandBuilder } from "discord.js";
 import { musicService } from "../music/MusicService";
-import { compactTrackLink, errorEmbed, musicEmbed, safeText, statusPill } from "../utils/embeds";
+import { compactTrackLink, errorEmbed, loadingEmbed, musicEmbed, safeText, statusPill } from "../utils/embeds";
 import { fmEmoji } from "../utils/emojis";
 import { UserFacingError } from "../utils/permissions";
 import { Command } from "./Command";
@@ -21,8 +21,8 @@ export const playCommand: Command = {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       await interaction.editReply({
         embeds: [
-          musicEmbed("Finding your track…", `Searching for **${safeText(query, 120)}** and preparing the voice connection.`)
-            .addFields({ name: `${fmEmoji("note_information", guildId)} Status`, value: statusPill("Resolving with yt-dlp"), inline: true })
+          loadingEmbed("Searching song…", `Searching for **${safeText(query, 120)}** and preparing the voice connection.`)
+            .addFields({ name: "Status", value: `${fmEmoji("loading", guildId)} ${statusPill("Resolving with yt-dlp")}`, inline: true })
         ]
       });
 

@@ -2,12 +2,12 @@ import { EmbedBuilder, escapeMarkdown } from "discord.js";
 import { fmEmoji, FMCordEmojiName } from "./emojis";
 
 export const colors = {
-  primary: 0x8b5cf6,
-  accent: 0x22d3ee,
-  success: 0x22c55e,
-  warning: 0xf59e0b,
+  primary: 0xef4444,
+  accent: 0xef4444,
+  success: 0xef4444,
+  warning: 0xef4444,
   error: 0xef4444,
-  neutral: 0x111827
+  neutral: 0xef4444
 } as const;
 
 const FOOTER = "FMCord • lightweight slash music";
@@ -50,6 +50,12 @@ export function infoEmbed(title: string, description?: string): EmbedBuilder {
 
 export function musicEmbed(title: string, description?: string): EmbedBuilder {
   const embed = baseEmbed(titleWithEmoji("music", title)).setColor(colors.accent);
+  if (description) embed.setDescription(description);
+  return embed;
+}
+
+export function loadingEmbed(title: string, description?: string): EmbedBuilder {
+  const embed = baseEmbed(titleWithEmoji("loading", title)).setColor(colors.accent);
   if (description) embed.setDescription(description);
   return embed;
 }
