@@ -15,7 +15,7 @@ export const volumeCommand: Command = {
       musicService.ensureUserInSameVoice(interaction);
       const volume = interaction.options.getInteger("value", true);
       musicService.setVolume(interaction.guildId!, volume);
-      await interaction.reply({ embeds: [successEmbed("Volume updated", `Volume is now **${volume}%**.`)] });
+      await interaction.reply({ embeds: [successEmbed("Volume updated", `Volume is now **${volume}%**.`)], ephemeral: true });
     } catch (error) {
       await interaction.reply({ embeds: [errorEmbed("Volume failed", error instanceof Error ? error.message : "Could not set volume.")], ephemeral: true });
     }

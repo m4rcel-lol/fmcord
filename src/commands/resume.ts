@@ -11,7 +11,7 @@ export const resumeCommand: Command = {
       musicService.ensureUserInSameVoice(interaction);
       const resumed = musicService.resume(interaction.guildId!);
       if (!resumed) throw new UserFacingError("Playback is not paused.");
-      await interaction.reply({ embeds: [successEmbed("Resumed", "Playback has resumed.")] });
+      await interaction.reply({ embeds: [successEmbed("Resumed", "Playback has resumed.")], ephemeral: true });
     } catch (error) {
       await interaction.reply({ embeds: [errorEmbed("Resume failed", error instanceof Error ? error.message : "Could not resume.")], ephemeral: true });
     }

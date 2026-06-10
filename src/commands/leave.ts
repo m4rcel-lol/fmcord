@@ -11,7 +11,7 @@ export const leaveCommand: Command = {
       musicService.leave(interaction.guildId!);
       await interaction.reply({ embeds: [successEmbed("Left voice", "I left the voice channel and cleared the queue.")] });
     } catch (error) {
-      await interaction.reply({ embeds: [errorEmbed("Leave failed", error instanceof Error ? error.message : "Could not leave voice.")], ephemeral: true });
+      await interaction.reply({ embeds: [errorEmbed("Leave failed", error instanceof Error ? error.message : "Could not leave voice.")] });
     }
   }
 };

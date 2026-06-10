@@ -11,7 +11,7 @@ export const pauseCommand: Command = {
       musicService.ensureUserInSameVoice(interaction);
       const paused = musicService.pause(interaction.guildId!);
       if (!paused) throw new UserFacingError("Playback is not currently running.");
-      await interaction.reply({ embeds: [successEmbed("Paused", "Playback has been paused.")] });
+      await interaction.reply({ embeds: [successEmbed("Paused", "Playback has been paused.")], ephemeral: true });
     } catch (error) {
       await interaction.reply({ embeds: [errorEmbed("Pause failed", error instanceof Error ? error.message : "Could not pause.")], ephemeral: true });
     }

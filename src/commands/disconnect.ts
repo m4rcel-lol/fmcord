@@ -9,7 +9,7 @@ export const disconnectCommand: Command = {
     try {
       musicService.ensureUserInSameVoice(interaction);
       musicService.disconnect(interaction.guildId!);
-      await interaction.reply({ embeds: [successEmbed("Disconnected", "I left the voice channel and cleared the queue.")] });
+      await interaction.reply({ embeds: [successEmbed("Disconnected", "I left the voice channel and cleared the queue.")], ephemeral: true });
     } catch (error) {
       await interaction.reply({ embeds: [errorEmbed("Disconnect failed", error instanceof Error ? error.message : "Could not disconnect.")], ephemeral: true });
     }

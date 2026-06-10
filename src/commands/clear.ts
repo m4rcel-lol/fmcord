@@ -9,7 +9,7 @@ export const clearCommand: Command = {
     try {
       musicService.ensureUserInSameVoice(interaction);
       const count = musicService.clearQueue(interaction.guildId!);
-      await interaction.reply({ embeds: [successEmbed("Queue cleared", `Removed **${count}** queued track${count === 1 ? "" : "s"}.`)] });
+      await interaction.reply({ embeds: [successEmbed("Queue cleared", `Removed **${count}** queued track${count === 1 ? "" : "s"}.`)], ephemeral: true });
     } catch (error) {
       await interaction.reply({ embeds: [errorEmbed("Clear failed", error instanceof Error ? error.message : "Could not clear the queue.")], ephemeral: true });
     }

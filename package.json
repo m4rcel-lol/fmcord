@@ -1,7 +1,7 @@
 {
   "name": "fmcord",
-  "version": "1.6.0",
-  "description": "FMCord - a fast lightweight slash-command Discord music bot with single live panel, custom emoji-aware embeds, 1-second progress, voice channel status, yt-dlp direct stream URLs, and FFmpeg.",
+  "version": "1.8.0",
+  "description": "FMCord - a fast lightweight slash-command Discord music bot with single live panel, custom emoji-aware embeds, cleaner now-playing panel, private music controls, about embed custom tech emojis, voice channel status, yt-dlp direct stream URLs, and FFmpeg.",
   "license": "MIT",
   "main": "dist/index.js",
   "scripts": {

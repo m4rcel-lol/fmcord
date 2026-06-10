@@ -9,7 +9,7 @@ export const skipCommand: Command = {
     try {
       musicService.ensureUserInSameVoice(interaction);
       musicService.skip(interaction.guildId!);
-      await interaction.reply({ embeds: [successEmbed("Skipped", "Skipping the current track.")] });
+      await interaction.reply({ embeds: [successEmbed("Skipped", "Skipping the current track.")], ephemeral: true });
     } catch (error) {
       await interaction.reply({ embeds: [errorEmbed("Skip failed", error instanceof Error ? error.message : "Could not skip.")], ephemeral: true });
     }

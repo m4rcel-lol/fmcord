@@ -15,7 +15,7 @@ export const removeCommand: Command = {
       musicService.ensureUserInSameVoice(interaction);
       const position = interaction.options.getInteger("position", true);
       const removed = musicService.remove(interaction.guildId!, position);
-      await interaction.reply({ embeds: [successEmbed("Removed from queue", `Removed **${safeText(removed.title, 160)}**.`)] });
+      await interaction.reply({ embeds: [successEmbed("Removed from queue", `Removed **${safeText(removed.title, 160)}**.`)], ephemeral: true });
     } catch (error) {
       await interaction.reply({ embeds: [errorEmbed("Remove failed", error instanceof Error ? error.message : "Could not remove that track.")], ephemeral: true });
     }

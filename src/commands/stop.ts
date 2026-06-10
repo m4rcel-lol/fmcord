@@ -9,7 +9,7 @@ export const stopCommand: Command = {
     try {
       musicService.ensureUserInSameVoice(interaction);
       musicService.stop(interaction.guildId!);
-      await interaction.reply({ embeds: [successEmbed("Stopped", "Playback stopped and the queue was cleared.")] });
+      await interaction.reply({ embeds: [successEmbed("Stopped", "Playback stopped and the queue was cleared.")], ephemeral: true });
     } catch (error) {
       await interaction.reply({ embeds: [errorEmbed("Stop failed", error instanceof Error ? error.message : "Could not stop.")], ephemeral: true });
     }

@@ -17,7 +17,6 @@ It uses slash commands only and does not require YouTube API keys, Spotify keys,
 - Join, leave, pause, resume, skip, stop, disconnect
 - Queue pages
 - Live now-playing panel that edits the same message instead of spamming duplicates
-- Custom emoji-aware embeds using `:music:`, `:note_information:`, `:notes_song_title:`, `:error:`, and `:nowplaying:` when available
 - Volume control from 1 to 150
 - Loop off / track / queue
 - Shuffle, remove, clear
@@ -169,19 +168,6 @@ npm start
 ```
 
 Make sure `yt-dlp` and `ffmpeg` are installed locally if you run without Docker.
-
-
-## Optional custom emojis
-
-FMCord automatically tries to use these custom emoji names when they exist in the server or as application emojis:
-
-- `:music:` for music actions, queue, volume, loop, and playback details
-- `:note_information:` for info/status fields
-- `:notes_song_title:` for song title labels
-- `:error:` for errors and warnings
-- `:nowplaying:` for now-playing panels and playback state
-
-If FMCord cannot find one of those emojis, it falls back to clean Unicode icons, so the bot will still work without extra setup.
 
 ## Slash commands
 
@@ -338,3 +324,17 @@ This build keeps one live now-playing panel per server and edits it instead of s
 - the 1-second periodic timer refreshes progress and time left
 
 The panel shows the current track, a codeblock progress bar, time left, total duration, upcoming song count, loop mode, volume, playback state, requester, source, and voice channel. `/join` and `/leave` are available, and FMCord stays locked to one voice channel per server until it leaves. You can change the refresh speed with `LIVE_PANEL_UPDATE_SECONDS`; the default is `1`.
+
+
+## v1.7 patch notes
+
+- Removed progress and time-left fields from the public Now Playing panel because they were unreliable on some streams.
+- Kept the single live Now Playing panel system. The bot still edits the existing panel when state, queue, volume, loop mode, or track info changes.
+- Music control command replies are now private/ephemeral for the user running the command. `/join` and `/leave` remain visible.
+
+
+## v1.8 patch notes
+
+- Added custom tech emojis to `/about` when available: `:nodejs:`, `:typescript:`, `:ytdlp:`, and `:discord:`.
+- About command values place tech emojis after the text, for example `Node.js v20.x :nodejs:`.
+- Keeps Unicode fallbacks if custom emojis are unavailable.

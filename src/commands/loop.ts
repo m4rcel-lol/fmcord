@@ -24,7 +24,7 @@ export const loopCommand: Command = {
       musicService.ensureUserInSameVoice(interaction);
       const mode = interaction.options.getString("mode", true) as LoopMode;
       musicService.setLoopMode(interaction.guildId!, mode);
-      await interaction.reply({ embeds: [successEmbed("Loop mode updated", `Loop mode is now **${mode}**.`)] });
+      await interaction.reply({ embeds: [successEmbed("Loop mode updated", `Loop mode is now **${mode}**.`)], ephemeral: true });
     } catch (error) {
       await interaction.reply({ embeds: [errorEmbed("Loop failed", error instanceof Error ? error.message : "Could not set loop mode.")], ephemeral: true });
     }

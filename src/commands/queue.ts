@@ -38,6 +38,6 @@ export const queueCommand: Command = {
       embed.setFooter({ text: `FMCord • ${queue.length} queued track${queue.length === 1 ? "" : "s"}` });
     }
 
-    await interaction.reply({ embeds: [embed] });
+    await interaction.reply({ embeds: [embed], ephemeral: true });
   }
 };

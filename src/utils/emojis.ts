@@ -1,6 +1,15 @@
 import { Client } from "discord.js";
 
-export type FMCordEmojiName = "music" | "note_information" | "notes_song_title" | "error" | "nowplaying";
+export type FMCordEmojiName =
+  | "music"
+  | "note_information"
+  | "notes_song_title"
+  | "error"
+  | "nowplaying"
+  | "nodejs"
+  | "typescript"
+  | "ytdlp"
+  | "discord";
 
 type UsableEmoji = {
   name: string | null;
@@ -12,7 +21,11 @@ const fallbackEmoji: Record<FMCordEmojiName, string> = {
   note_information: "ℹ️",
   notes_song_title: "🎶",
   error: "❌",
-  nowplaying: "▶️"
+  nowplaying: "▶️",
+  nodejs: "🟢",
+  typescript: "🔷",
+  ytdlp: "📥",
+  discord: "💬"
 };
 
 let clientRef: Client | null = null;

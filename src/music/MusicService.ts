@@ -20,11 +20,10 @@ import {
 } from "discord.js";
 import { config } from "../config";
 import { logger } from "../logger";
-import { formatTime } from "../utils/formatTime";
 import { compactTrackLink, infoEmbed, nowPlayingEmbed, safeText, songTitlePrefix, statusPill, warningEmbed } from "../utils/embeds";
 import { getMemberVoiceChannel, assertVoicePermissions, UserFacingError } from "../utils/permissions";
 import { Queue } from "./Queue";
-import { makeProgressBar, makeProgressCodeBlock } from "./progress";
+import { makeProgressBar } from "./progress";
 import { LoopMode, Track } from "./Track";
 import { YtdlpExtractor } from "./YtdlpExtractor";
 import { fmEmoji } from "../utils/emojis";
@@ -511,17 +510,10 @@ export class MusicService {
     const current = session.current;
     if (!current) return infoEmbed("Nothing playing", "There is no active track right now.");
 
-    const elapsedSeconds = this.getElapsedSeconds(session);
-    const remainingSeconds = current.durationSeconds
-      ? Math.max(0, current.durationSeconds - elapsedSeconds)
-      : null;
-    const remaining = current.isLive ? "Live" : remainingSeconds === null ? "Unknown" : formatTime(remainingSeconds);
     const state = session.pausedAt || session.player.state.status === AudioPlayerStatus.Paused ? "Paused" : "Playing";
 
     const embed = nowPlayingEmbed(`### ${songTitlePrefix(session.guildId)} ${compactTrackLink(current.title, current.url, 180)}`, session.guildId)
       .addFields(
-        { name: `${fmEmoji("music", session.guildId)} Progress`, value: makeProgressCodeBlock(elapsedSeconds, current.durationSeconds), inline: false },
-        { name: `${fmEmoji("note_information", session.guildId)} Time left`, value: statusPill(remaining), inline: true },
         { name: `${fmEmoji("note_information", session.guildId)} Duration`, value: statusPill(current.duration), inline: true },
         { name: `${fmEmoji("note_information", session.guildId)} Upcoming`, value: statusPill(`${session.queue.size()} song${session.queue.size() === 1 ? "" : "s"}`), inline: true },
         { name: `${fmEmoji("music", session.guildId)} Loop`, value: statusPill(session.loopMode), inline: true },
@@ -533,7 +525,7 @@ export class MusicService {
       );
 
     if (current.thumbnail) embed.setThumbnail(current.thumbnail);
-    embed.setFooter({ text: "FMCord • single live panel • edits every second" });
+    embed.setFooter({ text: "FMCord • single live panel • auto-updating" });
     return embed;
   }
 
