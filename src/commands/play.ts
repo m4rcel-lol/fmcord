@@ -36,12 +36,14 @@ export const playCommand: Command = {
         : `### Added **${result.tracks.length}** tracks\n${fmEmoji("notes_song_title", guildId)} First track: ${compactTrackLink(first.title, first.url, 150)}`;
 
       const embed = musicEmbed(title, description).addFields(
-        { name: `${fmEmoji("note_information", guildId)} Duration`, value: first.duration, inline: true },
-        { name: `${fmEmoji("note_information", guildId)} Requested by`, value: `<@${first.requestedBy}>`, inline: true },
-        { name: `${fmEmoji("nowplaying", guildId)} Position`, value: result.queuePosition === 0 ? statusPill("Now playing") : statusPill(`#${result.queuePosition}`), inline: true },
-        { name: `${fmEmoji("note_information", guildId)} Source`, value: statusPill(safeText(first.source, 64)), inline: true },
-        { name: `${fmEmoji("music", guildId)} Queue`, value: statusPill(`${result.queueLength} upcoming`), inline: true },
-        { name: `${fmEmoji("music", guildId)} Playback`, value: statusPill(first.streamUrl ? "Fast stream ready" : "Resolving with FFmpeg"), inline: true }
+        { name: `${fmEmoji("duration", guildId)} Duration`, value: statusPill(first.duration), inline: true },
+        { name: `${fmEmoji("upcoming", guildId)} Upcoming`, value: statusPill(`${result.queueLength} song${result.queueLength === 1 ? "" : "s"}`), inline: true },
+        { name: `${fmEmoji("loop", guildId)} Loop`, value: statusPill(result.loopMode), inline: true },
+        { name: `${fmEmoji("volume", guildId)} Volume`, value: statusPill(`${result.volume}%`), inline: true },
+        { name: `${fmEmoji("nowplaying", guildId)} State`, value: result.queuePosition === 0 ? statusPill("Now playing") : statusPill(`Queued #${result.queuePosition}`), inline: true },
+        { name: `${fmEmoji("requested", guildId)} Requested by`, value: `<@${first.requestedBy}>`, inline: true },
+        { name: `${fmEmoji("source", guildId)} Source`, value: statusPill(safeText(first.source, 64)), inline: true },
+        { name: `${fmEmoji("voice", guildId)} Voice`, value: result.voiceChannelId ? `<#${result.voiceChannelId}>` : "Unknown", inline: true }
       );
 
       if (first.thumbnail) embed.setThumbnail(first.thumbnail);

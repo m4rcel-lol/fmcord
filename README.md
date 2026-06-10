@@ -103,7 +103,6 @@ YTDLP_BINARY=yt-dlp
 FFMPEG_BINARY=ffmpeg
 ENABLE_VOICE_STATUS=true
 VOICE_STATUS_MAX_LENGTH=80
-LIVE_PANEL_UPDATE_SECONDS=5
 ```
 
 ### Slash command registration behavior
@@ -323,7 +322,7 @@ This build keeps one live now-playing panel per server and edits it instead of s
 - playback is paused or resumed
 - the periodic timer refreshes the panel without showing buggy progress/time-left fields
 
-The panel shows the current track, total duration, upcoming song count, loop mode, volume, playback state, requester, source, and voice channel. `/join` and `/leave` are available, and FMCord stays locked to one voice channel per server until it leaves. You can change the refresh speed with `LIVE_PANEL_UPDATE_SECONDS`; the default is `5`.
+The panel shows the current track, total duration, upcoming song count, loop mode, volume, playback state, requester, source, and voice channel. `/join` and `/leave` are available, and FMCord stays locked to one voice channel per server until it leaves. The Now Playing panel is event-based: it edits only when the track changes, the queue changes, loop/volume changes, or the playback state changes.
 
 
 ## v1.7 patch notes
@@ -347,4 +346,4 @@ The panel shows the current track, total duration, upcoming song count, loop mod
 - `/play` is focused on YouTube URLs, YouTube search terms, and direct audio URLs.
 - FFmpeg now outputs Discord-ready Opus instead of raw PCM to reduce Node-side encoding load.
 - Added FFmpeg reconnect, timestamp generation, corrupt packet discard, and async resampling flags for smoother playback.
-- Default live panel refresh changed to 5 seconds because progress/time-left fields were removed and 1-second edits are no longer needed.
+- Now Playing panel updates are event-based instead of timer-based, reducing Discord API edits and preventing constant embed refreshes.

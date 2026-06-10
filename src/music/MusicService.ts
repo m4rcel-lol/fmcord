@@ -28,8 +28,6 @@ import { YtdlpExtractor } from "./YtdlpExtractor";
 import { fmEmoji } from "../utils/emojis";
 
 const VOICE_STATUS_PERMISSION = 1n << 48n;
-const NOW_PLAYING_UPDATE_SECONDS = config.livePanelUpdateSeconds;
-
 interface SendableChannel {
   send: (options: { embeds: EmbedBuilder[] }) => Promise<Message | unknown>;
   messages?: {
@@ -77,6 +75,9 @@ export interface PlayResult {
   startedImmediately: boolean;
   queuePosition: number;
   queueLength: number;
+  loopMode: LoopMode;
+  volume: number;
+  voiceChannelId: string | null;
 }
 
 export interface JoinResult {
@@ -159,7 +160,15 @@ export class MusicService {
       void this.upsertNowPlayingMessage(session);
     }
 
-    return { tracks, startedImmediately, queuePosition, queueLength: session.queue.size() };
+    return {
+      tracks,
+      startedImmediately,
+      queuePosition,
+      queueLength: session.queue.size(),
+      loopMode: session.loopMode,
+      volume: session.volume,
+      voiceChannelId: session.voiceChannelId
+    };
   }
 
   public pause(guildId: string): boolean {
@@ -451,7 +460,6 @@ export class MusicService {
       session.player.play(resource);
       await this.setVoiceChannelStatus(session, makeVoiceStatus(next.title));
       await this.upsertNowPlayingMessage(session);
-      this.startNowPlayingTimer(session);
     } catch (error) {
       logger.warn(`Could not start track in guild ${session.guildId}`, error instanceof Error ? error.message : String(error));
       await this.sendToTextChannel(
@@ -506,7 +514,7 @@ export class MusicService {
       );
 
     if (current.thumbnail) embed.setThumbnail(current.thumbnail);
-    embed.setFooter({ text: "FMCord • single live panel • auto-updating" });
+    embed.setFooter({ text: "FMCord • single live panel • updates on changes" });
     return embed;
   }
 
@@ -516,7 +524,7 @@ export class MusicService {
     const embed = this.buildNowPlayingEmbed(session);
 
     // First choice: edit the live panel already created during this bot runtime.
-    // This is what prevents loop-track / next-track spam.
+    // This is what prevents loop-track / next-track spam. It only updates when playback state changes.
     if (session.nowPlayingChannelId && session.nowPlayingMessageId) {
       const edited = await this.tryEditMessage(session.nowPlayingChannelId, session.nowPlayingMessageId, embed);
       if (edited) return;
@@ -641,17 +649,6 @@ export class MusicService {
       logger.debug(`Could not edit now-playing message ${messageId}`, error instanceof Error ? error.message : String(error));
       return false;
     }
-  }
-
-  private startNowPlayingTimer(session: GuildSession): void {
-    this.clearNowPlayingTimer(session);
-    session.nowPlayingTimer = setInterval(() => {
-      if (!session.current) {
-        this.clearNowPlayingTimer(session);
-        return;
-      }
-      void this.upsertNowPlayingMessage(session);
-    }, NOW_PLAYING_UPDATE_SECONDS * 1000);
   }
 
   private clearNowPlayingTimer(session: GuildSession): void {
