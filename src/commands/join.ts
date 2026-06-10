@@ -1,6 +1,7 @@
 import { SlashCommandBuilder } from "discord.js";
 import { musicService } from "../music/MusicService";
-import { errorEmbed, successEmbed } from "../utils/embeds";
+import { baseEmbed, errorEmbed } from "../utils/embeds";
+import { fmEmoji } from "../utils/emojis";
 import { Command } from "./Command";
 
 export const joinCommand: Command = {
@@ -9,7 +10,7 @@ export const joinCommand: Command = {
     try {
       const result = await musicService.join(interaction);
       await interaction.reply({
-        embeds: [successEmbed("Joined voice", `Connected to <#${result.channelId}>. FMCord is now locked to that voice channel until you use \`/leave\`.`)]
+        embeds: [baseEmbed(`${fmEmoji("voice", interaction.guildId)} Joined voice`).setDescription(`Connected to <#${result.channelId}>. FMCord is now locked to that voice channel until you use \`/leave\`.`)]
       });
     } catch (error) {
       await interaction.reply({

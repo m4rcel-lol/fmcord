@@ -1,7 +1,8 @@
 import { SlashCommandBuilder } from "discord.js";
 import { musicService } from "../music/MusicService";
 import { LoopMode } from "../music/Track";
-import { errorEmbed, successEmbed } from "../utils/embeds";
+import { baseEmbed, errorEmbed } from "../utils/embeds";
+import { fmEmoji } from "../utils/emojis";
 import { Command } from "./Command";
 
 export const loopCommand: Command = {
@@ -24,7 +25,10 @@ export const loopCommand: Command = {
       musicService.ensureUserInSameVoice(interaction);
       const mode = interaction.options.getString("mode", true) as LoopMode;
       musicService.setLoopMode(interaction.guildId!, mode);
-      await interaction.reply({ embeds: [successEmbed("Loop mode updated", `Loop mode is now **${mode}**.`)], ephemeral: true });
+      await interaction.reply({
+        embeds: [baseEmbed(`${fmEmoji("loop", interaction.guildId)} Loop mode updated`).setDescription(`Loop mode is now **${mode}**.`)],
+        ephemeral: true
+      });
     } catch (error) {
       await interaction.reply({ embeds: [errorEmbed("Loop failed", error instanceof Error ? error.message : "Could not set loop mode.")], ephemeral: true });
     }

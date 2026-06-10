@@ -1,6 +1,6 @@
 import { version as discordJsVersion } from "discord.js";
 import { SlashCommandBuilder } from "discord.js";
-import { infoEmbed } from "../utils/embeds";
+import { musicEmbed } from "../utils/embeds";
 import { fmEmoji } from "../utils/emojis";
 import { Command } from "./Command";
 
@@ -11,11 +11,11 @@ export const aboutCommand: Command = {
 
     await interaction.reply({
       embeds: [
-        infoEmbed(
-          `${fmEmoji("music", guildId)} About FMCord`,
+        musicEmbed(
+          "About FMCord",
           "A lightweight, self-hosted Discord music bot using slash commands only."
         ).addFields(
-          { name: "Version", value: "2.9.0", inline: true },
+          { name: "Version", value: "2.10.0", inline: true },
           { name: "Author", value: "Marcel R.", inline: true },
           { name: "Runtime", value: `Node.js ${process.version} ${fmEmoji("nodejs", guildId)}`, inline: true },
           { name: "Language", value: `TypeScript ${fmEmoji("typescript", guildId)}`, inline: true },

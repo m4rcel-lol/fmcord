@@ -1,6 +1,7 @@
 import { SlashCommandBuilder } from "discord.js";
 import { musicService } from "../music/MusicService";
-import { errorEmbed, successEmbed } from "../utils/embeds";
+import { baseEmbed, errorEmbed } from "../utils/embeds";
+import { fmEmoji } from "../utils/emojis";
 import { Command } from "./Command";
 
 export const volumeCommand: Command = {
@@ -15,7 +16,10 @@ export const volumeCommand: Command = {
       musicService.ensureUserInSameVoice(interaction);
       const volume = interaction.options.getInteger("value", true);
       musicService.setVolume(interaction.guildId!, volume);
-      await interaction.reply({ embeds: [successEmbed("Volume updated", `Volume is now **${volume}%**.`)], ephemeral: true });
+      await interaction.reply({
+        embeds: [baseEmbed(`${fmEmoji("volume", interaction.guildId)} Volume updated`).setDescription(`Volume is now **${volume}%**.`)],
+        ephemeral: true
+      });
     } catch (error) {
       await interaction.reply({ embeds: [errorEmbed("Volume failed", error instanceof Error ? error.message : "Could not set volume.")], ephemeral: true });
     }
