@@ -7,7 +7,6 @@ import { logger } from "../logger";
 import { formatTime } from "../utils/formatTime";
 import { Extractor, PlaybackStream, ResolveOptions } from "./Extractor";
 import { Track } from "./Track";
-import { SpotifyResolver } from "./SpotifyResolver";
 
 const execFileAsync = promisify(execFile);
 const DIRECT_AUDIO_RE = /\.(mp3|wav|flac|m4a|aac|ogg|opus|webm)(\?.*)?$/i;
@@ -25,6 +24,7 @@ interface YtdlpInfo {
   duration?: number;
   duration_string?: string;
   thumbnail?: string;
+  thumbnails?: Array<{ url?: string; width?: number; height?: number }>;
   extractor?: string;
   extractor_key?: string;
   ie_key?: string;
@@ -48,25 +48,71 @@ function isUrl(value: string): boolean {
   }
 }
 
+function blockedProvider(value: string): "Spotify" | "SoundCloud" | null {
+  const clean = value.trim();
+
+  if (/^spotify:/i.test(clean)) return "Spotify";
+  if (/^(?:sc|soundcloud)\s*:/i.test(clean)) return "SoundCloud";
+
+  try {
+    const host = new URL(clean).hostname.replace(/^www\./, "").toLowerCase();
+    if (host === "open.spotify.com" || host.endsWith(".spotify.com")) return "Spotify";
+    if (host === "soundcloud.com" || host.endsWith(".soundcloud.com")) return "SoundCloud";
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
 function looksLikePlaylist(value: string): boolean {
   if (!isUrl(value)) return false;
   const lowered = value.toLowerCase();
-  return lowered.includes("list=") || lowered.includes("/playlist") || lowered.includes("/sets/");
+  return lowered.includes("list=") || lowered.includes("/playlist");
 }
 
 function extractorSearchTarget(value: string): boolean {
-  return /^(?:ytsearch|ytsearchdate|scsearch)\d*:/i.test(value);
+  return /^(?:ytsearch|ytsearchdate)\d*:/i.test(value);
 }
 
-function soundCloudSearchQuery(value: string): string | null {
-  const match = /^(?:sc|soundcloud)\s*:\s*(.+)$/i.exec(value.trim());
-  return match?.[1]?.trim() || null;
+function isYoutubeExtractor(info: YtdlpInfo): boolean {
+  return [info.extractor_key, info.extractor, info.ie_key].some((value) => value?.toLowerCase() === "youtube");
+}
+
+function youtubeVideoId(value: string | undefined): string | null {
+  if (!value) return null;
+  return /^[a-zA-Z0-9_-]{11}$/.test(value) ? value : null;
+}
+
+function searchTokens(value: string): string[] {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]+/g, " ")
+    .split(/\s+/)
+    .filter((token) => token.length >= 2 && !["the", "and", "official", "audio", "video", "lyrics", "lyric"].includes(token));
+}
+
+function scoreSearchCandidate(query: string, info: YtdlpInfo): number {
+  const title = (info.title || info.fulltitle || "").toLowerCase();
+  const tokens = searchTokens(query);
+  const matched = tokens.filter((token) => title.includes(token)).length;
+  let score = matched * 10;
+
+  if (/official audio|topic|provided to youtube/i.test(title)) score += 4;
+  if (/lyrics?|sped up|slowed|nightcore|8d|bass boosted|remix|cover|karaoke/i.test(title)) score -= 3;
+  if (info.is_live || info.live_status === "is_live") score -= 20;
+  if (typeof info.duration === "number" && info.duration > 0) {
+    if (info.duration > 20 * 60) score -= 10;
+    if (info.duration < 45) score -= 3;
+  }
+
+  return score;
 }
 
 function looksLikeWebpageUrl(url: string): boolean {
   try {
     const host = new URL(url).hostname.replace(/^www\./, "").toLowerCase();
-    return host === "youtube.com" || host === "youtu.be" || host === "music.youtube.com" || host === "soundcloud.com";
+    return host === "youtube.com" || host === "youtu.be" || host === "music.youtube.com";
   } catch {
     return true;
   }
@@ -75,9 +121,8 @@ function looksLikeWebpageUrl(url: string): boolean {
 function makeTrackUrl(info: YtdlpInfo): string | null {
   if (info.webpage_url) return info.webpage_url;
   if (info.original_url && isUrl(info.original_url)) return info.original_url;
-  if (info.id && ([info.extractor_key, info.extractor, info.ie_key].some((value) => value?.toLowerCase() === "youtube"))) {
-    return `https://www.youtube.com/watch?v=${info.id}`;
-  }
+  const id = youtubeVideoId(info.id) ?? (isYoutubeExtractor(info) ? youtubeVideoId(info.url) : null);
+  if (id) return `https://www.youtube.com/watch?v=${id}`;
   if (info.url && isUrl(info.url)) return info.url;
   return null;
 }
@@ -92,6 +137,13 @@ function getStreamExpiry(streamUrl: string): number | undefined {
   } catch {
     return undefined;
   }
+}
+
+function getBestThumbnail(info: YtdlpInfo): string | undefined {
+  if (info.thumbnail) return info.thumbnail;
+  const thumbnails = info.thumbnails?.filter((thumbnail) => thumbnail.url) ?? [];
+  thumbnails.sort((a, b) => ((b.width ?? 0) * (b.height ?? 0)) - ((a.width ?? 0) * (a.height ?? 0)));
+  return thumbnails[0]?.url;
 }
 
 function getDirectStreamUrl(info: YtdlpInfo): string | undefined {
@@ -131,7 +183,7 @@ function createTrack(info: YtdlpInfo, options: ResolveOptions): Track | null {
     url,
     duration: isLive ? "Live" : formatTime(seconds),
     durationSeconds: isLive ? null : seconds,
-    thumbnail: info.thumbnail,
+    thumbnail: getBestThumbnail(info),
     requestedBy: options.requestedBy,
     requesterTag: options.requesterTag,
     source,
@@ -144,19 +196,14 @@ function createTrack(info: YtdlpInfo, options: ResolveOptions): Track | null {
 
 export class YtdlpExtractor implements Extractor {
   private readonly cache = new Map<string, CachedResult>();
-  private readonly spotify = new SpotifyResolver();
 
   public async resolve(query: string, options: ResolveOptions): Promise<Track[]> {
     const cleanQuery = query.trim();
     if (!cleanQuery) throw new Error("Search query cannot be empty.");
 
-    if (this.spotify.isSpotifyInput(cleanQuery)) {
-      return this.spotify.resolve(cleanQuery, options);
-    }
-
-    const scQuery = soundCloudSearchQuery(cleanQuery);
-    if (scQuery) {
-      return this.resolveSingle(`scsearch1:${scQuery}`, options);
+    const blocked = blockedProvider(cleanQuery);
+    if (blocked) {
+      throw new Error(`${blocked} support was removed because it was unreliable. Use a YouTube URL, YouTube search, or a direct audio URL instead.`);
     }
 
     if (isUrl(cleanQuery) && DIRECT_AUDIO_RE.test(cleanQuery)) {
@@ -171,7 +218,9 @@ export class YtdlpExtractor implements Extractor {
 
     const tracks = looksLikePlaylist(cleanQuery)
       ? await this.resolvePlaylistThenFallback(cleanQuery, options)
-      : await this.resolveSingle(cleanQuery, options);
+      : isUrl(cleanQuery) || extractorSearchTarget(cleanQuery)
+        ? await this.resolveSingle(cleanQuery, options)
+        : await this.resolveYoutubeSearch(cleanQuery, options);
 
     if (tracks.length > 0 && !looksLikePlaylist(cleanQuery)) {
       this.cache.set(cacheKey, {
@@ -191,21 +240,39 @@ export class YtdlpExtractor implements Extractor {
       "-loglevel",
       "warning",
       "-nostdin",
+      "-fflags",
+      "+genpts+discardcorrupt",
       "-reconnect",
       "1",
       "-reconnect_streamed",
       "1",
+      "-reconnect_at_eof",
+      "1",
       "-reconnect_delay_max",
-      "5",
+      "10",
+      "-rw_timeout",
+      "15000000",
       "-i",
       streamUrl,
       "-vn",
+      "-map",
+      "0:a:0",
+      "-af",
+      "aresample=async=1000:first_pts=0",
+      "-c:a",
+      "libopus",
+      "-b:a",
+      "128k",
+      "-vbr",
+      "on",
+      "-compression_level",
+      "5",
+      "-application",
+      "audio",
+      "-frame_duration",
+      "20",
       "-f",
-      "s16le",
-      "-ar",
-      "48000",
-      "-ac",
-      "2",
+      "opus",
       "pipe:1"
     ], {
       stdio: ["ignore", "pipe", "pipe"]
@@ -218,13 +285,38 @@ export class YtdlpExtractor implements Extractor {
       this.killProcess(ffmpeg);
     };
 
-    ffmpeg.once("spawn", () => logger.debug(`Started FFmpeg stream for ${track.title}`));
+    ffmpeg.once("spawn", () => logger.debug(`Started FFmpeg Opus stream for ${track.title}`));
     ffmpeg.once("error", cleanup);
 
     return {
       stream: ffmpeg.stdout as Readable,
       cleanup
     };
+  }
+
+  private async resolveYoutubeSearch(query: string, options: ResolveOptions): Promise<Track[]> {
+    try {
+      const info = await this.runJson([
+        "--flat-playlist",
+        "--playlist-end",
+        "5",
+        "--dump-single-json",
+        `ytsearch5:${query}`
+      ]);
+
+      const entries = Array.isArray(info.entries) ? info.entries : [];
+      const ranked = entries
+        .filter((entry) => !entry.is_live && entry.live_status !== "is_live")
+        .sort((a, b) => scoreSearchCandidate(query, b) - scoreSearchCandidate(query, a));
+
+      const selected = ranked[0] ?? entries[0];
+      const track = selected ? createTrack(selected, options) : null;
+      if (track) return [track];
+    } catch (error) {
+      logger.debug("Fast YouTube search failed; falling back to detailed search", error instanceof Error ? error.message : String(error));
+    }
+
+    return this.resolveSingle(query, options);
   }
 
   private async resolveSingle(query: string, options: ResolveOptions): Promise<Track[]> {
@@ -235,7 +327,7 @@ export class YtdlpExtractor implements Extractor {
       "ytsearch",
       "--skip-download",
       "--format",
-      "bestaudio[ext=webm][acodec=opus]/bestaudio[ext=m4a]/bestaudio/best",
+      "bestaudio[acodec=opus]/bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best",
       "--dump-single-json",
       target
     ]);
@@ -297,9 +389,7 @@ export class YtdlpExtractor implements Extractor {
       return track.streamUrl;
     }
 
-    const playbackTarget = track.playbackUrl ?? track.url;
-
-    if (DIRECT_AUDIO_RE.test(playbackTarget)) return playbackTarget;
+    if (DIRECT_AUDIO_RE.test(track.url)) return track.url;
 
     const { stdout } = await execFileAsync(config.ytdlpBinary, [
       "--no-warnings",
@@ -307,13 +397,13 @@ export class YtdlpExtractor implements Extractor {
       "--quiet",
       "--force-ipv4",
       "--socket-timeout",
-      "15",
-      "-f",
-      "bestaudio[ext=webm][acodec=opus]/bestaudio[ext=m4a]/bestaudio/best",
-      "-g",
-      playbackTarget
+      "12",
+      "--format",
+      "bestaudio[acodec=opus]/bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best",
+      "--get-url",
+      track.url
     ], {
-      timeout: 25_000,
+      timeout: 20_000,
       maxBuffer: 1024 * 1024
     });
 
@@ -331,10 +421,10 @@ export class YtdlpExtractor implements Extractor {
       "--quiet",
       "--force-ipv4",
       "--socket-timeout",
-      "15",
+      "12",
       ...args
     ], {
-      timeout: 25_000,
+      timeout: 20_000,
       maxBuffer: 20 * 1024 * 1024
     });
 

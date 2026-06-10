@@ -10,7 +10,7 @@ export const playCommand: Command = {
     .setName("play")
     .setDescription("Play a song from a URL or search query.")
     .addStringOption((option) =>
-      option.setName("query").setDescription("YouTube/SoundCloud/Spotify URL, direct audio URL, SoundCloud search with sc:, or search terms.").setRequired(true)
+      option.setName("query").setDescription("YouTube URL, YouTube search query, or direct audio URL.").setRequired(true)
     ),
 
   async execute(interaction) {
@@ -21,8 +21,8 @@ export const playCommand: Command = {
       await interaction.deferReply({ flags: MessageFlags.Ephemeral });
       await interaction.editReply({
         embeds: [
-          loadingEmbed("Searching song…", `Searching for **${safeText(query, 120)}** and preparing the voice connection.`)
-            .addFields({ name: "Status", value: `${fmEmoji("loading", guildId)} ${statusPill("Resolving source")}`, inline: true })
+          loadingEmbed("Searching song…", `Searching YouTube for **${safeText(query, 120)}** and preparing playback.`)
+            .addFields({ name: "Status", value: `${fmEmoji("loading", guildId)} ${statusPill("Resolving YouTube")}`, inline: true })
         ]
       });
 
@@ -41,7 +41,7 @@ export const playCommand: Command = {
         { name: `${fmEmoji("nowplaying", guildId)} Position`, value: result.queuePosition === 0 ? statusPill("Now playing") : statusPill(`#${result.queuePosition}`), inline: true },
         { name: `${fmEmoji("note_information", guildId)} Source`, value: statusPill(safeText(first.source, 64)), inline: true },
         { name: `${fmEmoji("music", guildId)} Queue`, value: statusPill(`${result.queueLength} upcoming`), inline: true },
-        { name: `${fmEmoji("music", guildId)} Playback`, value: statusPill(first.streamUrl ? "Fast stream ready" : "Will resolve on start"), inline: true }
+        { name: `${fmEmoji("music", guildId)} Playback`, value: statusPill(first.streamUrl ? "Fast stream ready" : "Resolving with FFmpeg"), inline: true }
       );
 
       if (first.thumbnail) embed.setThumbnail(first.thumbnail);
@@ -49,9 +49,9 @@ export const playCommand: Command = {
     } catch (error) {
       const message = error instanceof UserFacingError
         ? error.message
-        : error instanceof Error && error.message.startsWith("Spotify links need")
+        : error instanceof Error && (error.message.includes("Spotify support was removed") || error.message.includes("SoundCloud support was removed"))
           ? error.message
-          : "I could not play that track. Try a different query or URL.";
+          : "I could not play that track. Try a YouTube link, direct audio URL, or different search query.";
       const embed = errorEmbed("Play failed", message);
       if (interaction.deferred || interaction.replied) {
         await interaction.editReply({ embeds: [embed] });

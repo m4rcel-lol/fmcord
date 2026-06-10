@@ -23,7 +23,6 @@ import { logger } from "../logger";
 import { compactTrackLink, infoEmbed, nowPlayingEmbed, safeText, songTitlePrefix, statusPill, warningEmbed } from "../utils/embeds";
 import { getMemberVoiceChannel, assertVoicePermissions, UserFacingError } from "../utils/permissions";
 import { Queue } from "./Queue";
-import { makeProgressBar } from "./progress";
 import { LoopMode, Track } from "./Track";
 import { YtdlpExtractor } from "./YtdlpExtractor";
 import { fmEmoji } from "../utils/emojis";
@@ -87,9 +86,6 @@ export interface JoinResult {
 
 export interface NowPlayingInfo {
   track: Track;
-  elapsedSeconds: number;
-  remainingSeconds: number | null;
-  progress: string;
   loopMode: LoopMode;
   volume: number;
   queueLength: number;
@@ -272,16 +268,8 @@ export class MusicService {
     const session = this.sessions.get(guildId);
     if (!session?.current) return null;
 
-    const elapsedSeconds = this.getElapsedSeconds(session);
-    const remainingSeconds = session.current.durationSeconds
-      ? Math.max(0, session.current.durationSeconds - elapsedSeconds)
-      : null;
-
     return {
       track: session.current,
-      elapsedSeconds,
-      remainingSeconds,
-      progress: makeProgressBar(elapsedSeconds, session.current.durationSeconds),
       loopMode: session.loopMode,
       volume: session.volume,
       queueLength: session.queue.size()
@@ -456,7 +444,7 @@ export class MusicService {
       const playback = await this.extractor.createPlaybackStream(next);
       session.cleanupStream = playback.cleanup;
       const resource = createAudioResource(playback.stream, {
-        inputType: StreamType.Raw,
+        inputType: StreamType.OggOpus,
         inlineVolume: true
       });
       resource.volume?.setVolume(session.volume / 100);
@@ -497,13 +485,6 @@ export class MusicService {
     session.current = null;
     session.skipRequested = false;
     await this.startNext(session);
-  }
-
-  private getElapsedSeconds(session: GuildSession): number {
-    if (!session.currentStartedAt) return 0;
-    const now = session.pausedAt ?? Date.now();
-    const elapsedMs = now - session.currentStartedAt - session.totalPausedMs;
-    return Math.max(0, Math.floor(elapsedMs / 1000));
   }
 
   private buildNowPlayingEmbed(session: GuildSession): EmbedBuilder {

@@ -12,21 +12,11 @@ export interface Track {
   createdAt: number;
 
   /**
-   * Optional direct media URL resolved by yt-dlp during search/metadata extraction.
-   * When present and fresh, playback can start with FFmpeg directly instead of
-   * spawning yt-dlp a second time.
+   * Optional direct media URL resolved by yt-dlp during extraction.
+   * When present and fresh, playback can start without spawning yt-dlp again.
    */
   streamUrl?: string;
   streamExpiresAt?: number;
-
-  /**
-   * Optional extractor/search target used for playback when the public display URL
-   * points to a metadata source such as Spotify.
-   */
-  playbackUrl?: string;
-
-  /** Original metadata provider for display/debugging, e.g. Spotify. */
-  metadataSource?: string;
 }
 
 export type LoopMode = "off" | "track" | "queue";

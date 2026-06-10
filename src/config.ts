@@ -35,10 +35,7 @@ export const config = {
   enableGlobalCommands: readBoolean("ENABLE_GLOBAL_COMMANDS", false),
   enableVoiceStatus: readBoolean("ENABLE_VOICE_STATUS", true),
   voiceStatusMaxLength: readNumber("VOICE_STATUS_MAX_LENGTH", 80, 20, 500),
-  livePanelUpdateSeconds: readNumber("LIVE_PANEL_UPDATE_SECONDS", 1, 1, 30),
+  livePanelUpdateSeconds: readNumber("LIVE_PANEL_UPDATE_SECONDS", 5, 1, 30),
   ytdlpBinary: process.env.YTDLP_BINARY?.trim() || "yt-dlp",
-  ffmpegBinary: process.env.FFMPEG_BINARY?.trim() || "ffmpeg",
-  spotifyClientId: process.env.SPOTIFY_CLIENT_ID?.trim() || undefined,
-  spotifyClientSecret: process.env.SPOTIFY_CLIENT_SECRET?.trim() || undefined,
-  spotifyMarket: process.env.SPOTIFY_MARKET?.trim() || undefined
+  ffmpegBinary: process.env.FFMPEG_BINARY?.trim() || "ffmpeg"
 } as const;
