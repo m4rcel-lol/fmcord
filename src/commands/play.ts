@@ -32,8 +32,8 @@ export const playCommand: Command = {
 
       const title = result.startedImmediately ? "Playback starting" : "Added to queue";
       const description = result.tracks.length === 1
-        ? `### ${fmEmoji("notes_song_title", guildId)} ${compactTrackLink(first.title, first.url, 190)}\nThe public **Now playing** embed will be posted in your voice channel chat.`
-        : `### Added **${result.tracks.length}** tracks\n${fmEmoji("notes_song_title", guildId)} First track: ${compactTrackLink(first.title, first.url, 150)}`;
+        ? `### ${fmEmoji("songtitle", guildId)} ${compactTrackLink(first.title, first.url, 190)}\nThe public **Now playing** embed will be posted in your voice channel chat.`
+        : `### Added **${result.tracks.length}** tracks\n${fmEmoji("songtitle", guildId)} First track: ${compactTrackLink(first.title, first.url, 150)}`;
 
       const embed = musicEmbed(title, description).addFields(
         { name: `${fmEmoji("duration", guildId)} Duration`, value: statusPill(first.duration), inline: true },

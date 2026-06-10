@@ -71,7 +71,7 @@ export function nowPlayingEmbed(description?: string, guildId?: string | null): 
 }
 
 export function songTitlePrefix(guildId?: string | null): string {
-  return fmEmoji("notes_song_title", guildId);
+  return fmEmoji("songtitle", guildId);
 }
 
 export function warningEmbed(title: string, description?: string): EmbedBuilder {

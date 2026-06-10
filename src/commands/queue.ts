@@ -23,7 +23,7 @@ export const queueCommand: Command = {
       .addFields({
         name: `${fmEmoji("nowplaying", guildId)} Now playing`,
         value: current
-          ? `${fmEmoji("notes_song_title", guildId)} ${compactTrackLink(current.title, current.url, 170)}\n${statusPill(current.duration)} • <@${current.requestedBy}>`
+          ? `${fmEmoji("songtitle", guildId)} ${compactTrackLink(current.title, current.url, 170)}\n${statusPill(current.duration)} • <@${current.requestedBy}>`
           : "Nothing is playing right now."
       });
 
@@ -32,7 +32,7 @@ export const queueCommand: Command = {
     } else {
       const lines = page.items.map((track, index) => {
         const position = page.offset + index + 1;
-        return `**${position}.** ${fmEmoji("notes_song_title", guildId)} ${compactTrackLink(track.title, track.url, 85)}\n└ ${statusPill(track.duration)} • <@${track.requestedBy}> • ${safeText(track.source, 40)}`;
+        return `**${position}.** ${fmEmoji("songtitle", guildId)} ${compactTrackLink(track.title, track.url, 85)}\n└ ${statusPill(track.duration)} • <@${track.requestedBy}> • ${safeText(track.source, 40)}`;
       });
       embed.addFields({ name: `${fmEmoji("music", guildId)} Upcoming — Page ${page.page}/${page.totalPages}`, value: lines.join("\n") });
       embed.setFooter({ text: `FMCord • ${queue.length} queued track${queue.length === 1 ? "" : "s"}` });

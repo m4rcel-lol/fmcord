@@ -3,7 +3,7 @@ import { Client } from "discord.js";
 export type FMCordEmojiName =
   | "music"
   | "note_information"
-  | "notes_song_title"
+  | "songtitle"
   | "error"
   | "warning"
   | "warn"
@@ -32,7 +32,7 @@ type UsableEmoji = {
 const fallbackEmoji: Record<FMCordEmojiName, string> = {
   music: "🎵",
   note_information: "ℹ️",
-  notes_song_title: "🎶",
+  songtitle: "🎶",
   error: "⚠️",
   warning: "⚠️",
   warn: "⚠️",
