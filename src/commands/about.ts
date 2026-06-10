@@ -10,7 +10,7 @@ export const aboutCommand: Command = {
       embeds: [
         infoEmbed("About FMCord", "A lightweight, self-hosted Discord music bot using slash commands only.")
           .addFields(
-            { name: "Version", value: "1.3.0", inline: true },
+            { name: "Version", value: "1.6.0", inline: true },
             { name: "Author", value: "m5rcode / FMCord contributors", inline: true },
             { name: "Runtime", value: `Node.js ${process.version}`, inline: true },
             { name: "Discord library", value: `discord.js ${discordJsVersion}`, inline: true },

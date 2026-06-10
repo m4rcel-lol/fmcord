@@ -17,6 +17,7 @@ It uses slash commands only and does not require YouTube API keys, Spotify keys,
 - Join, leave, pause, resume, skip, stop, disconnect
 - Queue pages
 - Live now-playing panel that edits the same message instead of spamming duplicates
+- Custom emoji-aware embeds using `:music:`, `:note_information:`, `:notes_song_title:`, `:error:`, and `:nowplaying:` when available
 - Volume control from 1 to 150
 - Loop off / track / queue
 - Shuffle, remove, clear
@@ -168,6 +169,19 @@ npm start
 ```
 
 Make sure `yt-dlp` and `ffmpeg` are installed locally if you run without Docker.
+
+
+## Optional custom emojis
+
+FMCord automatically tries to use these custom emoji names when they exist in the server or as application emojis:
+
+- `:music:` for music actions, queue, volume, loop, and playback details
+- `:note_information:` for info/status fields
+- `:notes_song_title:` for song title labels
+- `:error:` for errors and warnings
+- `:nowplaying:` for now-playing panels and playback state
+
+If FMCord cannot find one of those emojis, it falls back to clean Unicode icons, so the bot will still work without extra setup.
 
 ## Slash commands
 

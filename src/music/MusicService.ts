@@ -21,12 +21,13 @@ import {
 import { config } from "../config";
 import { logger } from "../logger";
 import { formatTime } from "../utils/formatTime";
-import { compactTrackLink, infoEmbed, musicEmbed, safeText, statusPill, successEmbed, warningEmbed } from "../utils/embeds";
+import { compactTrackLink, infoEmbed, nowPlayingEmbed, safeText, songTitlePrefix, statusPill, warningEmbed } from "../utils/embeds";
 import { getMemberVoiceChannel, assertVoicePermissions, UserFacingError } from "../utils/permissions";
 import { Queue } from "./Queue";
 import { makeProgressBar, makeProgressCodeBlock } from "./progress";
 import { LoopMode, Track } from "./Track";
 import { YtdlpExtractor } from "./YtdlpExtractor";
+import { fmEmoji } from "../utils/emojis";
 
 const VOICE_STATUS_PERMISSION = 1n << 48n;
 const NOW_PLAYING_UPDATE_SECONDS = config.livePanelUpdateSeconds;
@@ -39,7 +40,7 @@ interface SendableChannel {
 }
 
 function makeVoiceStatus(title: string): string {
-  const prefix = "🎵 ";
+  const prefix = `${fmEmoji("music")} `;
   const cleanTitle = title.replace(/\s+/g, " ").trim() || "Unknown track";
   const maxLength = Math.max(prefix.length + 8, Math.min(config.voiceStatusMaxLength, 500));
   const available = maxLength - prefix.length;
@@ -204,13 +205,13 @@ export class MusicService {
     this.clearNowPlayingTimer(session);
     session.player.stop(true);
     void this.setVoiceChannelStatus(session, null);
-    void this.editNowPlayingNotice(session, "⏹️ Playback stopped", "Playback stopped and the queue was cleared.");
+    void this.editNowPlayingNotice(session, "Playback stopped", "Playback stopped and the queue was cleared.");
     this.scheduleIdleDisconnect(session);
   }
 
   public disconnect(guildId: string): void {
     const session = this.requireSession(guildId);
-    void this.editNowPlayingNotice(session, "👋 Disconnected", "I left the voice channel and cleared the queue.");
+    void this.editNowPlayingNotice(session, "Disconnected", "I left the voice channel and cleared the queue.");
     this.destroySession(session);
   }
 
@@ -440,7 +441,7 @@ export class MusicService {
       session.current = null;
       this.clearNowPlayingTimer(session);
       void this.setVoiceChannelStatus(session, null);
-      void this.editNowPlayingNotice(session, "✅ Queue finished", "There are no upcoming tracks. I will leave after the idle timeout unless more music is added.");
+      void this.editNowPlayingNotice(session, "Queue finished", "There are no upcoming tracks. I will leave after the idle timeout unless more music is added.");
       this.scheduleIdleDisconnect(session);
       return;
     }
@@ -517,18 +518,18 @@ export class MusicService {
     const remaining = current.isLive ? "Live" : remainingSeconds === null ? "Unknown" : formatTime(remainingSeconds);
     const state = session.pausedAt || session.player.state.status === AudioPlayerStatus.Paused ? "Paused" : "Playing";
 
-    const embed = musicEmbed("🎧 Now playing", `### ${compactTrackLink(current.title, current.url, 180)}`)
+    const embed = nowPlayingEmbed(`### ${songTitlePrefix(session.guildId)} ${compactTrackLink(current.title, current.url, 180)}`, session.guildId)
       .addFields(
-        { name: "Progress", value: makeProgressCodeBlock(elapsedSeconds, current.durationSeconds), inline: false },
-        { name: "⏳ Time left", value: statusPill(remaining), inline: true },
-        { name: "⏱️ Duration", value: statusPill(current.duration), inline: true },
-        { name: "📜 Upcoming", value: statusPill(`${session.queue.size()} song${session.queue.size() === 1 ? "" : "s"}`), inline: true },
-        { name: "🔁 Loop", value: statusPill(session.loopMode), inline: true },
-        { name: "🔊 Volume", value: statusPill(`${session.volume}%`), inline: true },
-        { name: "▶️ State", value: statusPill(state), inline: true },
-        { name: "👤 Requested by", value: `<@${current.requestedBy}>`, inline: true },
-        { name: "🌐 Source", value: statusPill(safeText(current.source, 64)), inline: true },
-        { name: "📍 Voice", value: session.voiceChannelId ? `<#${session.voiceChannelId}>` : "Unknown", inline: true }
+        { name: `${fmEmoji("music", session.guildId)} Progress`, value: makeProgressCodeBlock(elapsedSeconds, current.durationSeconds), inline: false },
+        { name: `${fmEmoji("note_information", session.guildId)} Time left`, value: statusPill(remaining), inline: true },
+        { name: `${fmEmoji("note_information", session.guildId)} Duration`, value: statusPill(current.duration), inline: true },
+        { name: `${fmEmoji("note_information", session.guildId)} Upcoming`, value: statusPill(`${session.queue.size()} song${session.queue.size() === 1 ? "" : "s"}`), inline: true },
+        { name: `${fmEmoji("music", session.guildId)} Loop`, value: statusPill(session.loopMode), inline: true },
+        { name: `${fmEmoji("music", session.guildId)} Volume`, value: statusPill(`${session.volume}%`), inline: true },
+        { name: `${fmEmoji("nowplaying", session.guildId)} State`, value: statusPill(state), inline: true },
+        { name: `${fmEmoji("note_information", session.guildId)} Requested by`, value: `<@${current.requestedBy}>`, inline: true },
+        { name: `${fmEmoji("note_information", session.guildId)} Source`, value: statusPill(safeText(current.source, 64)), inline: true },
+        { name: `${fmEmoji("note_information", session.guildId)} Voice`, value: session.voiceChannelId ? `<#${session.voiceChannelId}>` : "Unknown", inline: true }
       );
 
     if (current.thumbnail) embed.setThumbnail(current.thumbnail);

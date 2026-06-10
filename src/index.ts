@@ -7,12 +7,14 @@ import { registerReadyEvent } from "./events/ready";
 import { registerVoiceStateUpdateEvent } from "./events/voiceStateUpdate";
 import { logger } from "./logger";
 import { musicService } from "./music/MusicService";
+import { initEmojiResolver } from "./utils/emojis";
 
 async function main(): Promise<void> {
   const client = new Client({
     intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates]
   });
 
+  initEmojiResolver(client);
   musicService.init(client);
   registerErrorHandlers(client);
   registerReadyEvent(client);
