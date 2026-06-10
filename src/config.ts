@@ -29,12 +29,15 @@ export const config = {
   nodeEnv: process.env.NODE_ENV ?? "production",
   defaultVolume: readNumber("DEFAULT_VOLUME", 80, 1, 150),
   maxQueueSize: readNumber("MAX_QUEUE_SIZE", 100, 1, 1000),
-  maxPlaylistSize: readNumber("MAX_PLAYLIST_SIZE", 25, 1, 100),
+  maxPlaylistSize: readNumber("MAX_PLAYLIST_SIZE", 100, 1, 500),
   idleTimeoutSeconds: readNumber("IDLE_TIMEOUT_SECONDS", 300, 30, 3600),
   leaveEmptyChannelSeconds: readNumber("LEAVE_EMPTY_CHANNEL_SECONDS", 60, 10, 900),
   enableGlobalCommands: readBoolean("ENABLE_GLOBAL_COMMANDS", false),
   enableVoiceStatus: readBoolean("ENABLE_VOICE_STATUS", true),
   voiceStatusMaxLength: readNumber("VOICE_STATUS_MAX_LENGTH", 80, 20, 500),
   ytdlpBinary: process.env.YTDLP_BINARY?.trim() || "yt-dlp",
-  ffmpegBinary: process.env.FFMPEG_BINARY?.trim() || "ffmpeg"
+  ffmpegBinary: process.env.FFMPEG_BINARY?.trim() || "ffmpeg",
+  spotifyClientId: process.env.SPOTIFY_CLIENT_ID?.trim() || undefined,
+  spotifyClientSecret: process.env.SPOTIFY_CLIENT_SECRET?.trim() || undefined,
+  spotifyMarket: (process.env.SPOTIFY_MARKET?.trim() || "PL").toUpperCase()
 } as const;

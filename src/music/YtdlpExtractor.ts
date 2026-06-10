@@ -7,6 +7,7 @@ import { logger } from "../logger";
 import { formatTime } from "../utils/formatTime";
 import { Extractor, PlaybackStream, ResolveOptions } from "./Extractor";
 import { Track } from "./Track";
+import { MetadataTrackInput, UrlMetadataResolver } from "./UrlMetadataResolver";
 
 const execFileAsync = promisify(execFile);
 const DIRECT_AUDIO_RE = /\.(mp3|wav|flac|m4a|aac|ogg|opus|webm)(\?.*)?$/i;
@@ -46,23 +47,6 @@ function isUrl(value: string): boolean {
   } catch {
     return false;
   }
-}
-
-function blockedProvider(value: string): "Spotify" | "SoundCloud" | null {
-  const clean = value.trim();
-
-  if (/^spotify:/i.test(clean)) return "Spotify";
-  if (/^(?:sc|soundcloud)\s*:/i.test(clean)) return "SoundCloud";
-
-  try {
-    const host = new URL(clean).hostname.replace(/^www\./, "").toLowerCase();
-    if (host === "open.spotify.com" || host.endsWith(".spotify.com")) return "Spotify";
-    if (host === "soundcloud.com" || host.endsWith(".soundcloud.com")) return "SoundCloud";
-  } catch {
-    return null;
-  }
-
-  return null;
 }
 
 function looksLikePlaylist(value: string): boolean {
@@ -196,15 +180,11 @@ function createTrack(info: YtdlpInfo, options: ResolveOptions): Track | null {
 
 export class YtdlpExtractor implements Extractor {
   private readonly cache = new Map<string, CachedResult>();
+  private readonly metadataResolver = new UrlMetadataResolver();
 
   public async resolve(query: string, options: ResolveOptions): Promise<Track[]> {
     const cleanQuery = query.trim();
     if (!cleanQuery) throw new Error("Search query cannot be empty.");
-
-    const blocked = blockedProvider(cleanQuery);
-    if (blocked) {
-      throw new Error(`${blocked} support was removed because it was unreliable. Use a YouTube URL, YouTube search, or a direct audio URL instead.`);
-    }
 
     if (isUrl(cleanQuery) && DIRECT_AUDIO_RE.test(cleanQuery)) {
       return [this.directTrack(cleanQuery, options)];
@@ -214,6 +194,19 @@ export class YtdlpExtractor implements Extractor {
     const cached = this.cache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
       return cached.tracks.map((track) => cloneForRequester(track, options));
+    }
+
+    const metadataResult = await this.metadataResolver.resolve(cleanQuery);
+    if (metadataResult) {
+      const tracks = metadataResult.tracks
+        .map((track) => this.metadataTrack(track, options))
+        .slice(0, config.maxPlaylistSize);
+      if (tracks.length === 0) throw new Error(`${metadataResult.provider} returned no usable metadata.`);
+      this.cache.set(cacheKey, {
+        expiresAt: Date.now() + CACHE_TTL_MS,
+        tracks
+      });
+      return tracks;
     }
 
     const tracks = looksLikePlaylist(cleanQuery)
@@ -366,6 +359,28 @@ export class YtdlpExtractor implements Extractor {
     }
   }
 
+  private metadataTrack(input: MetadataTrackInput, options: ResolveOptions): Track {
+    const displayTitle = input.artist && !input.title.toLowerCase().includes(input.artist.toLowerCase())
+      ? `${input.artist} - ${input.title}`
+      : input.title;
+
+    return {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+      title: displayTitle,
+      url: input.url,
+      duration: formatTime(input.durationSeconds),
+      durationSeconds: input.durationSeconds,
+      thumbnail: input.thumbnail,
+      requestedBy: options.requestedBy,
+      requesterTag: options.requesterTag,
+      source: input.source,
+      isLive: false,
+      createdAt: Date.now(),
+      playbackTarget: `ytsearch1:${input.playbackSearch}`,
+      originProvider: input.source.startsWith("Spotify") ? "Spotify" : "SoundCloud"
+    };
+  }
+
   private directTrack(url: string, options: ResolveOptions): Track {
     const parsed = new URL(url);
     const title = decodeURIComponent(basename(parsed.pathname)) || parsed.hostname;
@@ -389,7 +404,9 @@ export class YtdlpExtractor implements Extractor {
       return track.streamUrl;
     }
 
-    if (DIRECT_AUDIO_RE.test(track.url)) return track.url;
+    const playbackTarget = track.playbackTarget ?? track.url;
+
+    if (DIRECT_AUDIO_RE.test(playbackTarget)) return playbackTarget;
 
     const { stdout } = await execFileAsync(config.ytdlpBinary, [
       "--no-warnings",
@@ -401,7 +418,7 @@ export class YtdlpExtractor implements Extractor {
       "--format",
       "bestaudio[acodec=opus]/bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best",
       "--get-url",
-      track.url
+      playbackTarget
     ], {
       timeout: 20_000,
       maxBuffer: 1024 * 1024

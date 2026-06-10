@@ -4,7 +4,7 @@ import { Command } from "./Command";
 
 const commandList = [
   "`/join` Join your voice channel and lock FMCord there.",
-  "`/play query:` Play YouTube URLs, direct audio files, or normal YouTube search terms.",
+  "`/play query:` Play YouTube URLs/search, Spotify track/album/playlist metadata links, SoundCloud track/set URL metadata, or direct audio files.",
   "`/pause` Pause playback.",
   "`/resume` Resume playback.",
   "`/skip` Skip the current track.",

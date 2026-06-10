@@ -2,7 +2,7 @@
 
 FMCord is a lightweight self-hosted Discord music bot built with TypeScript, discord.js v14, @discordjs/voice, yt-dlp, and FFmpeg.
 
-It uses slash commands only. The only required secret is your Discord bot token. Spotify and SoundCloud integrations were removed to keep playback simpler, faster, and less buggy.
+It uses slash commands only. The only required secret is your Discord bot token. Spotify metadata support is optional, and SoundCloud URL metadata support handles public SoundCloud tracks and sets/playlists. FMCord does not stream Spotify or SoundCloud audio directly; those URLs are converted into safe public-source searches for yt-dlp/FFmpeg playback.
 
 ## Features
 
@@ -11,6 +11,8 @@ It uses slash commands only. The only required secret is your Discord bot token.
 - YouTube search query playback
 - YouTube playlist support with a configurable max playlist size
 - Direct audio URL support for common audio formats
+- Optional Spotify track, album, and playlist metadata input
+- SoundCloud public track and set/playlist metadata input
 - Per-server music sessions
 - Queue system
 - Join, leave, pause, resume, skip, stop, disconnect
@@ -95,7 +97,7 @@ NODE_ENV=production
 LOG_LEVEL=info
 DEFAULT_VOLUME=80
 MAX_QUEUE_SIZE=100
-MAX_PLAYLIST_SIZE=25
+MAX_PLAYLIST_SIZE=100
 IDLE_TIMEOUT_SECONDS=300
 LEAVE_EMPTY_CHANNEL_SECONDS=60
 ENABLE_GLOBAL_COMMANDS=false
@@ -103,6 +105,11 @@ YTDLP_BINARY=yt-dlp
 FFMPEG_BINARY=ffmpeg
 ENABLE_VOICE_STATUS=true
 VOICE_STATUS_MAX_LENGTH=80
+
+# Optional Spotify metadata/input support
+SPOTIFY_CLIENT_ID=
+SPOTIFY_CLIENT_SECRET=
+SPOTIFY_MARKET=PL
 ```
 
 ### Slash command registration behavior
@@ -172,7 +179,7 @@ Make sure `yt-dlp` and `ffmpeg` are installed locally if you run without Docker.
 | Command | Description |
 | --- | --- |
 | `/join` | Join your current voice channel without starting music. |
-| `/play query:<string>` | Play YouTube URLs, direct audio URLs, or normal YouTube search terms. |
+| `/play query:<string>` | Play YouTube URLs/searches, Spotify metadata links, SoundCloud URL metadata, or direct audio URLs. |
 | `/pause` | Pause playback. |
 | `/resume` | Resume playback. |
 | `/skip` | Skip the current track. |
@@ -192,7 +199,7 @@ Make sure `yt-dlp` and `ffmpeg` are installed locally if you run without Docker.
 
 ## How music extraction works without API keys
 
-FMCord uses `yt-dlp`, a free open-source extractor, to resolve YouTube URLs and YouTube search queries. No YouTube Data API key is used.
+FMCord uses `yt-dlp`, a free open-source extractor, to resolve YouTube URLs and YouTube search queries. No YouTube Data API key is used. Spotify links are resolved with the official Spotify Web API for metadata only, then converted into YouTube/public-source search targets. SoundCloud track links use URL metadata, and SoundCloud set/playlist links collect individual public track metadata before converting each item into YouTube/public-source search targets. FMCord does not stream, download, rip, or rebroadcast Spotify audio directly.
 
 Playback is handled by FFmpeg. FMCord resolves a direct media URL with yt-dlp, then FFmpeg reconnects to the stream when possible, fixes timestamps with async resampling, encodes the audio as Opus, and @discordjs/voice sends it to the voice channel. This avoids Node-side PCM encoding work and helps prevent lag, random speed changes, and stutters on weaker VPS machines.
 
@@ -273,7 +280,7 @@ No. It only uses slash commands.
 
 ### Does FMCord support Spotify or SoundCloud links?
 
-No. Spotify and SoundCloud input support was removed because it was unreliable for this bot. Use YouTube links, normal YouTube search terms, or direct audio URLs instead.
+Yes, as metadata/input. Spotify track, album, and playlist links use the official Spotify Web API when `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` are set. SoundCloud public track URLs use URL metadata, and SoundCloud set/playlist URLs are expanded into multiple queued tracks when possible. Playback still uses yt-dlp/FFmpeg against supported public sources instead of streaming Spotify or SoundCloud audio directly.
 
 ### Does FMCord download songs to disk?
 
@@ -281,7 +288,7 @@ No. The normal playback path streams through yt-dlp and FFmpeg pipes.
 
 ### Can I raise playlist size?
 
-Yes. Change `MAX_PLAYLIST_SIZE`, but large playlists can be slower and more likely to hit extractor limits.
+Yes. Change `MAX_PLAYLIST_SIZE`, but large playlists can be slower and must still fit under `MAX_QUEUE_SIZE`.
 
 ## License
 
@@ -341,9 +348,20 @@ The panel shows the current track, total duration, upcoming song count, loop mod
 
 ## v2.3 playback cleanup
 
-- Removed Spotify metadata/input support.
-- Removed SoundCloud input/search support.
-- `/play` is focused on YouTube URLs, YouTube search terms, and direct audio URLs.
+- Re-added Spotify metadata/input support with cleaner API handling and cached Client Credentials tokens.
+- Re-added SoundCloud URL metadata support, including public SoundCloud set/playlist expansion.
+- `/play` supports YouTube URLs/search terms, Spotify metadata links, SoundCloud URL metadata, and direct audio URLs.
 - FFmpeg now outputs Discord-ready Opus instead of raw PCM to reduce Node-side encoding load.
 - Added FFmpeg reconnect, timestamp generation, corrupt packet discard, and async resampling flags for smoother playback.
 - Now Playing panel updates are event-based instead of timer-based, reducing Discord API edits and preventing constant embed refreshes.
+
+
+## v2.12 metadata playlist input notes
+
+- Spotify playlist and album links collect readable track metadata up to `MAX_PLAYLIST_SIZE` and queue each item. The default is now 100.
+- SoundCloud set/playlist URLs now expand into individual queued metadata tracks when yt-dlp can read the public set.
+
+- Spotify support is metadata-only: track, album, and playlist links are read with the Spotify Web API, then converted into public-source search targets for yt-dlp.
+- SoundCloud support is metadata-only: public SoundCloud track URLs are resolved from URL metadata, and public SoundCloud set/playlist URLs are expanded into individual queued metadata tracks before yt-dlp playback matching.
+- FMCord does not stream Spotify audio directly and does not store downloaded audio files.
+- If Spotify playlist access fails because of Spotify account/app restrictions, the bot returns a clean error instead of crashing.

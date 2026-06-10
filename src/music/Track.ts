@@ -17,6 +17,13 @@ export interface Track {
    */
   streamUrl?: string;
   streamExpiresAt?: number;
+
+  /**
+   * Optional yt-dlp target used when a metadata provider URL should be converted
+   * to a playable public-source search at playback time.
+   */
+  playbackTarget?: string;
+  originProvider?: "Spotify" | "SoundCloud";
 }
 
 export type LoopMode = "off" | "track" | "queue";
