@@ -7,6 +7,7 @@ const execFileAsync = promisify(execFile);
 const SPOTIFY_API = "https://api.spotify.com/v1";
 const SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token";
 const SOUNDCLOUD_OEMBED_URL = "https://soundcloud.com/oembed";
+const SPOTIFY_OEMBED_URL = "https://open.spotify.com/oembed";
 const DEFAULT_TIMEOUT_MS = 9_000;
 const SPOTIFY_REDIRECT_TIMEOUT_MS = 6_000;
 const MAX_RETRY_AFTER_MS = 3_000;
@@ -122,6 +123,12 @@ interface SoundCloudOEmbed {
   provider_name?: string;
 }
 
+interface SpotifyOEmbed {
+  title?: string;
+  thumbnail_url?: string;
+  provider_name?: string;
+}
+
 interface SoundCloudYtdlpInfo {
   id?: string;
   title?: string;
@@ -212,7 +219,7 @@ async function fetchWithTimeout(url: string, init: RequestInit = {}, timeoutMs =
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const headers = new Headers(init.headers);
-  if (!headers.has("User-Agent")) headers.set("User-Agent", "FMCord/2.12 metadata resolver");
+  if (!headers.has("User-Agent")) headers.set("User-Agent", "FMCord/2.18 metadata resolver");
 
   try {
     return await fetch(url, {
@@ -359,6 +366,44 @@ function cleanSoundCloudTitle(title: string, author: string | undefined): string
   return clean;
 }
 
+function parseSpotifyOEmbedTitle(value: string): { title: string; artist: string | null } {
+  let clean = normalizeSpaces(value)
+    .replace(/^Spotify\s+Embed\s*:\s*/i, "")
+    .replace(/\s*[|｜]\s*Spotify\s*$/i, "")
+    .replace(/\s+on\s+Spotify\s*$/i, "");
+
+  clean = clean.replace(/^Listen to\s+/i, "");
+
+  const songLyricsByMatch = /^(.+?)\s+-\s+(?:song\s+and\s+lyrics|track)\s+by\s+(.+)$/i.exec(clean);
+  if (songLyricsByMatch?.[1] && songLyricsByMatch[2]) {
+    return { title: stripNoise(songLyricsByMatch[1]), artist: stripNoise(songLyricsByMatch[2]) || null };
+  }
+
+  const byMatch = /^(.+?)\s+by\s+(.+)$/i.exec(clean);
+  if (byMatch?.[1] && byMatch[2]) {
+    return { title: stripNoise(byMatch[1]), artist: stripNoise(byMatch[2]) || null };
+  }
+
+  const dashMatch = /^(.+?)\s+-\s+(.+)$/.exec(clean);
+  if (dashMatch?.[1] && dashMatch[2]) {
+    const left = stripNoise(dashMatch[1]);
+    const right = stripNoise(dashMatch[2]);
+
+    if (/album|single|ep|playlist/i.test(right)) {
+      return { title: left, artist: null };
+    }
+
+    return { title: left, artist: right || null };
+  }
+
+  const bulletMatch = /^(.+?)\s+[•·]\s+(.+)$/.exec(clean);
+  if (bulletMatch?.[1] && bulletMatch[2]) {
+    return { title: stripNoise(bulletMatch[1]), artist: stripNoise(bulletMatch[2]) || null };
+  }
+
+  return { title: stripNoise(clean), artist: null };
+}
+
 function soundCloudAuthor(info: SoundCloudYtdlpInfo): string | undefined {
   return normalizeSpaces(info.uploader ?? info.artist ?? info.creator ?? info.channel ?? "") || undefined;
 }
@@ -393,7 +438,25 @@ export class UrlMetadataResolver {
 
   public async resolve(input: string): Promise<MetadataResolveResult | null> {
     const spotifyInput = await this.parseSpotifyInputOrRedirect(input);
-    if (spotifyInput) return this.resolveSpotify(spotifyInput);
+    if (spotifyInput) {
+      try {
+        return await this.resolveSpotify(spotifyInput);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.warn(`Spotify Web API metadata failed: ${message}`);
+
+        if (spotifyInput.kind === "track") {
+          try {
+            return await this.resolveSpotifyTrackOEmbed(spotifyInput);
+          } catch (fallbackError) {
+            const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+            throw new Error(`Spotify metadata failed. Web API: ${message}. oEmbed fallback: ${fallbackMessage}`);
+          }
+        }
+
+        throw new Error(`Spotify metadata failed for that ${spotifyInput.kind}. Check SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET, app access, and SPOTIFY_MARKET. Details: ${message}`);
+      }
+    }
     if (isSoundCloudUrl(input)) return this.resolveSoundCloud(input.trim());
     return null;
   }
@@ -420,6 +483,36 @@ export class UrlMetadataResolver {
     }
 
     return null;
+  }
+
+  private async resolveSpotifyTrackOEmbed(input: ParsedSpotifyInput): Promise<MetadataResolveResult> {
+    const url = `https://open.spotify.com/track/${input.id}`;
+    const requestUrl = `${SPOTIFY_OEMBED_URL}?url=${encodeURIComponent(url)}`;
+    const metadata = await fetchJson<SpotifyOEmbed>(requestUrl, {
+      headers: { Accept: "application/json" }
+    }, DEFAULT_TIMEOUT_MS);
+
+    const parsed = parseSpotifyOEmbedTitle(metadata.title ?? "");
+    if (!parsed.title) throw new Error("Spotify oEmbed returned incomplete track metadata.");
+
+    const displayArtist = parsed.artist || undefined;
+    return {
+      provider: "Spotify",
+      kind: "track",
+      collectionTitle: parsed.artist ? `${parsed.artist} - ${parsed.title}` : parsed.title,
+      tracks: [
+        {
+          title: parsed.title,
+          artist: displayArtist,
+          url,
+          thumbnail: metadata.thumbnail_url,
+          durationSeconds: null,
+          source: "Spotify → YouTube",
+          playbackSearch: buildPlaybackSearch(displayArtist, parsed.title),
+          kind: "track"
+        }
+      ]
+    };
   }
 
   private async resolveSpotify(input: ParsedSpotifyInput): Promise<MetadataResolveResult> {

@@ -364,15 +364,20 @@ export class YtdlpExtractor implements Extractor {
 
     const metadataResult = await this.metadataResolver.resolve(cleanQuery);
     if (metadataResult) {
-      const tracks = metadataResult.tracks
-        .map((track) => this.metadataTrack(track, options))
-        .slice(0, config.maxPlaylistSize);
-      if (tracks.length === 0) throw new Error(`${metadataResult.provider} returned no usable metadata.`);
+      const inputs = metadataResult.tracks.slice(0, config.maxPlaylistSize);
+      const tracks = await Promise.all(
+        metadataResult.kind === "track" && inputs.length === 1
+          ? [this.metadataTrack(inputs[0] as MetadataTrackInput, options, true)]
+          : inputs.map((track) => this.metadataTrack(track, options))
+      );
+
+      const usableTracks = tracks.filter((track): track is Track => Boolean(track));
+      if (usableTracks.length === 0) throw new Error(`${metadataResult.provider} returned no usable metadata.`);
       this.cache.set(cacheKey, {
         expiresAt: Date.now() + CACHE_TTL_MS,
-        tracks
+        tracks: usableTracks
       });
-      return tracks;
+      return usableTracks;
     }
 
     const tracks = looksLikePlaylist(cleanQuery)
@@ -649,10 +654,36 @@ export class YtdlpExtractor implements Extractor {
     }
   }
 
-  private metadataTrack(input: MetadataTrackInput, options: ResolveOptions): Track {
+  private async metadataTrack(input: MetadataTrackInput, options: ResolveOptions, hydrateYoutube = false): Promise<Track> {
     const displayTitle = input.artist && !input.title.toLowerCase().includes(input.artist.toLowerCase())
       ? `${input.artist} - ${input.title}`
       : input.title;
+    const originProvider = input.source.startsWith("Spotify") ? "Spotify" : "SoundCloud";
+    const fallbackPlaybackTarget = `ytsearch${YOUTUBE_SEARCH_CANDIDATES}:${input.playbackSearch}`;
+
+    if (hydrateYoutube) {
+      try {
+        const selected = await this.selectBestYoutubeCandidate(input.playbackSearch, input.durationSeconds);
+        const selectedUrl = selected ? makeTrackUrl(selected) : null;
+        const hydrated = selected ? createTrack(selected, options, {
+          source: input.source,
+          playbackTarget: selectedUrl ?? fallbackPlaybackTarget,
+          originProvider
+        }) : null;
+
+        if (hydrated) {
+          hydrated.title = displayTitle;
+          hydrated.url = input.url;
+          hydrated.duration = formatTime(input.durationSeconds ?? hydrated.durationSeconds);
+          hydrated.durationSeconds = input.durationSeconds ?? hydrated.durationSeconds;
+          hydrated.thumbnail = input.thumbnail ?? hydrated.thumbnail;
+          hydrated.playbackTarget = selectedUrl ?? fallbackPlaybackTarget;
+          return hydrated;
+        }
+      } catch (error) {
+        logger.debug(`Could not pre-match ${input.source} metadata to YouTube`, error instanceof Error ? error.message : String(error));
+      }
+    }
 
     return {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
@@ -666,8 +697,8 @@ export class YtdlpExtractor implements Extractor {
       source: input.source,
       isLive: false,
       createdAt: Date.now(),
-      playbackTarget: `ytsearch${YOUTUBE_SEARCH_CANDIDATES}:${input.playbackSearch}`,
-      originProvider: input.source.startsWith("Spotify") ? "Spotify" : "SoundCloud"
+      playbackTarget: fallbackPlaybackTarget,
+      originProvider
     };
   }
 

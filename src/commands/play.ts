@@ -49,9 +49,10 @@ export const playCommand: Command = {
       if (first.thumbnail) embed.setThumbnail(first.thumbnail);
       await interaction.editReply({ embeds: [embed] });
     } catch (error) {
+      const isProviderQuery = /(?:open\.spotify\.com|spotify:|spotify\.link|spoti\.fi|soundcloud\.com)/i.test(query);
       const message = error instanceof UserFacingError
         ? error.message
-        : error instanceof Error && (error.message.includes("Spotify") || error.message.includes("SoundCloud"))
+        : error instanceof Error && (isProviderQuery || error.message.includes("Spotify") || error.message.includes("SoundCloud") || error.message.includes("yt-dlp"))
           ? error.message
           : "I could not play that track. Try a YouTube link/search, public SoundCloud URL/search, Spotify URL, direct audio URL, or different query.";
       const embed = errorEmbed("Play failed", message);

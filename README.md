@@ -402,3 +402,8 @@ FMCord no longer reuses finished direct CDN/media URLs when a track is replayed 
 ### Spotify market note
 
 `SPOTIFY_MARKET` should be a Spotify country market such as `GB`, `US`, or `PL`. `EN` is a language code, not a Spotify country market, so FMCord maps `EN` to `GB` automatically instead of letting Spotify metadata requests fail.
+
+
+## Spotify troubleshooting
+
+FMCord uses Spotify only for metadata. For normal Spotify track URLs, v2.18 first tries the Spotify Web API and falls back to Spotify oEmbed metadata if the Web API credentials are missing, invalid, blocked, or temporarily failing. Spotify playlists, albums, and artist top tracks still need valid `SPOTIFY_CLIENT_ID` and `SPOTIFY_CLIENT_SECRET` because oEmbed cannot expand a full collection. Use `SPOTIFY_MARKET=GB`, `US`, or `PL` rather than `EN`.
