@@ -483,16 +483,34 @@ export class MusicService {
     }
 
     if (!session.skipRequested) {
+      const replayTrack = this.cloneTrackForReplay(finished);
       if (session.loopMode === "track") {
-        session.queue.prepend({ ...finished, id: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}` });
+        session.queue.prepend(replayTrack);
       } else if (session.loopMode === "queue") {
-        session.queue.add({ ...finished, id: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}` });
+        session.queue.add(replayTrack);
       }
     }
 
     session.current = null;
     session.skipRequested = false;
     await this.startNext(session);
+  }
+
+  private cloneTrackForReplay(track: Track): Track {
+    const replay: Track = {
+      ...track,
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+      createdAt: Date.now()
+    };
+
+    // Never reuse a finished provider stream URL on loop/replay. Some SoundCloud and
+    // other CDN URLs can reconnect or resume around the previous end position, which
+    // made looped tracks restart a few seconds into the song. Keeping the original
+    // page/playback target forces yt-dlp to resolve a fresh media URL from 0:00.
+    delete replay.streamUrl;
+    delete replay.streamExpiresAt;
+
+    return replay;
   }
 
   private buildNowPlayingEmbed(session: GuildSession): EmbedBuilder {

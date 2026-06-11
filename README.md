@@ -392,3 +392,8 @@ SoundCloud no longer requires a SoundCloud developer app in FMCord. Public Sound
 FMCord now uses a stronger YouTube matching layer for normal searches and metadata-provider playback targets. Instead of trusting the first `ytsearch1` result, it checks multiple candidates, scores title/channel/token matches, prefers official audio/topic uploads, uses provider duration metadata when available, and avoids obvious sped-up/slowed/nightcore/remix/cover/live results unless the user asks for those terms.
 
 For SoundCloud URLs, FMCord still keeps exact public SoundCloud playback and will not silently fall back to a random YouTube result.
+
+
+## v2.16 provider loop playback stability notes
+
+FMCord no longer reuses finished direct CDN/media URLs when a track is replayed through `loop track` or `loop queue`. This prevents SoundCloud and other provider URLs from resuming a few seconds into the track after a loop restart. FFmpeg also no longer reconnects at normal EOF, and it now outputs an Ogg Opus stream that matches the Discord voice resource type.
