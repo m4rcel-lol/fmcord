@@ -227,6 +227,21 @@ Cookies are intentionally not required or enabled by default. Do not add private
 - The Docker runtime uses a non-root user.
 - Only minimal Discord intents are used.
 
+
+### SoundCloud exact playback note
+
+FMCord treats public SoundCloud URLs as exact playback targets. It resolves them with yt-dlp and plays the resolved public SoundCloud audio directly through FFmpeg. It no longer silently falls back from a SoundCloud URL to a YouTube search, because that could play the wrong song.
+
+Use:
+
+```txt
+/play https://soundcloud.com/artist/track
+/play https://soundcloud.com/artist/sets/playlist
+/play sc: artist title
+```
+
+If a SoundCloud URL fails, update yt-dlp in the container or use a public/available SoundCloud URL. Private, deleted, region-blocked, or login-only tracks cannot be played.
+
 ## Troubleshooting
 
 ### Slash commands do not show up
@@ -356,7 +371,7 @@ The panel shows the current track, total duration, upcoming song count, loop mod
 - Now Playing panel updates are event-based instead of timer-based, reducing Discord API edits and preventing constant embed refreshes.
 
 
-## v2.13 SoundCloud native playback notes
+## v2.14 SoundCloud native playback notes
 
 - Spotify playlist and album links collect readable track metadata up to `MAX_PLAYLIST_SIZE` and queue each item. The default is now 100.
 - SoundCloud set/playlist URLs now expand into individual queued SoundCloud tracks when yt-dlp can read the public set.
@@ -367,6 +382,13 @@ The panel shows the current track, total duration, upcoming song count, loop mod
 - If Spotify playlist access fails because of Spotify account/app restrictions, the bot returns a clean error instead of crashing.
 
 
-## v2.13 no-key SoundCloud playback
+## v2.14 no-key SoundCloud playback
 
 SoundCloud no longer requires a SoundCloud developer app in FMCord. Public SoundCloud track URLs and set/playlist URLs are resolved with yt-dlp and streamed through FFmpeg. You can also search SoundCloud directly with `sc: query` or `soundcloud: query`. Spotify remains metadata-only and still needs optional Spotify credentials for Spotify URLs.
+
+
+## v2.15 smarter song matching notes
+
+FMCord now uses a stronger YouTube matching layer for normal searches and metadata-provider playback targets. Instead of trusting the first `ytsearch1` result, it checks multiple candidates, scores title/channel/token matches, prefers official audio/topic uploads, uses provider duration metadata when available, and avoids obvious sped-up/slowed/nightcore/remix/cover/live results unless the user asks for those terms.
+
+For SoundCloud URLs, FMCord still keeps exact public SoundCloud playback and will not silently fall back to a random YouTube result.

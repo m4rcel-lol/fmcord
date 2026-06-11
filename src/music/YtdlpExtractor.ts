@@ -14,6 +14,8 @@ const DIRECT_AUDIO_RE = /\.(mp3|wav|flac|m4a|aac|ogg|opus|webm)(\?.*)?$/i;
 const CACHE_TTL_MS = 10 * 60 * 1000;
 const STREAM_REFRESH_SAFETY_MS = 60 * 1000;
 const STREAM_FALLBACK_EXPIRY_MS = 5 * 60 * 60 * 1000;
+const YOUTUBE_SEARCH_CANDIDATES = 12;
+const YOUTUBE_SEARCH_TIMEOUT_MS = 12_000;
 
 interface YtdlpInfo {
   id?: string;
@@ -33,6 +35,12 @@ interface YtdlpInfo {
   is_live?: boolean;
   entries?: YtdlpInfo[];
   requested_downloads?: Array<{ url?: string; protocol?: string; ext?: string }>;
+  uploader?: string;
+  channel?: string;
+  creator?: string;
+  artist?: string;
+  view_count?: number;
+  availability?: string;
 }
 
 interface CachedResult {
@@ -94,29 +102,114 @@ function youtubeVideoId(value: string | undefined): string | null {
   return /^[a-zA-Z0-9_-]{11}$/.test(value) ? value : null;
 }
 
-function searchTokens(value: string): string[] {
+function normalizeSearchText(value: string): string {
   return value
     .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/&/g, " and ")
     .replace(/[^a-z0-9\s]+/g, " ")
-    .split(/\s+/)
-    .filter((token) => token.length >= 2 && !["the", "and", "official", "audio", "video", "lyrics", "lyric"].includes(token));
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
-function scoreSearchCandidate(query: string, info: YtdlpInfo): number {
-  const title = (info.title || info.fulltitle || "").toLowerCase();
-  const tokens = searchTokens(query);
-  const matched = tokens.filter((token) => title.includes(token)).length;
-  let score = matched * 10;
+function stripSearchNoise(value: string): string {
+  return value
+    .replace(/[|｜].*$/u, " ")
+    .replace(/\b(?:official\s+)?(?:music\s+)?video\b/gi, " ")
+    .replace(/\b(?:official\s+)?audio\b/gi, " ")
+    .replace(/\blyrics?\b/gi, " ")
+    .replace(/\bhd\b|\b4k\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
-  if (/official audio|topic|provided to youtube/i.test(title)) score += 4;
-  if (/lyrics?|sped up|slowed|nightcore|8d|bass boosted|remix|cover|karaoke/i.test(title)) score -= 3;
-  if (info.is_live || info.live_status === "is_live") score -= 20;
+function searchTokens(value: string): string[] {
+  const stopWords = new Set(["the", "and", "official", "audio", "video", "lyrics", "lyric", "music", "feat", "ft", "with"]);
+  return normalizeSearchText(value)
+    .split(/\s+/)
+    .filter((token) => token.length >= 2 && !stopWords.has(token));
+}
+
+function queryWants(query: string, pattern: RegExp): boolean {
+  return pattern.test(normalizeSearchText(query));
+}
+
+function scoreSearchCandidate(query: string, info: YtdlpInfo, expectedDurationSeconds?: number | null): number {
+  const rawTitle = info.title || info.fulltitle || "";
+  const title = normalizeSearchText(rawTitle);
+  const channel = normalizeSearchText([info.uploader, info.channel, info.creator, info.artist].filter(Boolean).join(" "));
+  const normalizedQuery = normalizeSearchText(query);
+  const strippedQuery = normalizeSearchText(stripSearchNoise(query));
+  const tokens = searchTokens(strippedQuery || normalizedQuery);
+  const matched = tokens.filter((token) => title.includes(token) || channel.includes(token)).length;
+  let score = matched * 18;
+
+  if (tokens.length > 0) score += (matched / tokens.length) * 90;
+  if (strippedQuery && title.includes(strippedQuery)) score += 75;
+  if (normalizedQuery && title.includes(normalizedQuery)) score += 55;
+
+  const artistTitle = /^(.*?)\s+-\s+(.*)$/.exec(stripSearchNoise(query));
+  if (artistTitle?.[1] && artistTitle[2]) {
+    const artist = normalizeSearchText(artistTitle[1]);
+    const song = normalizeSearchText(artistTitle[2]);
+    if (artist && (title.includes(artist) || channel.includes(artist))) score += 35;
+    if (song && title.includes(song)) score += 45;
+  }
+
+  if (/\bofficial audio\b|\baudio only\b/.test(title)) score += 14;
+  if (/\btopic\b/.test(channel)) score += 22;
+  if (/\bprovided to youtube\b/.test(title)) score += 10;
+
+  if (!queryWants(query, /\blyrics?\b/) && /\blyrics?\b|lyric video/.test(title)) score -= 10;
+  if (!queryWants(query, /\bremix\b/) && /\bremix\b/.test(title)) score -= 18;
+  if (!queryWants(query, /\bcover\b/) && /\bcover\b|karaoke|instrumental/.test(title)) score -= 28;
+  if (!queryWants(query, /\blive\b/) && /\blive\b|concert|performance/.test(title)) score -= 22;
+  if (!queryWants(query, /sped|slowed|nightcore|8d|bass/) && /sped up|slowed|nightcore|8d|bass boosted|reverb/.test(title)) score -= 35;
+  if (!queryWants(query, /extended|hour|loop/) && /1 hour|10 hours|looped|extended/.test(title)) score -= 35;
+  if (/reaction|tutorial|how to|review|full album/.test(title)) score -= 45;
+
+  if (info.is_live || info.live_status === "is_live") score -= 120;
+  if (info.availability && info.availability !== "public") score -= 25;
+
   if (typeof info.duration === "number" && info.duration > 0) {
-    if (info.duration > 20 * 60) score -= 10;
-    if (info.duration < 45) score -= 3;
+    if (expectedDurationSeconds && expectedDurationSeconds > 0) {
+      const diff = Math.abs(info.duration - expectedDurationSeconds);
+      if (diff <= 2) score += 55;
+      else if (diff <= 5) score += 45;
+      else if (diff <= 15) score += 25;
+      else if (diff <= 30) score += 10;
+      else score -= Math.min(55, diff / 4);
+    }
+
+    if (info.duration > 12 * 60 && !queryWants(query, /mix|album|extended|hour|loop/)) score -= 30;
+    if (info.duration < 45 && !queryWants(query, /short|intro|interlude/)) score -= 12;
+  }
+
+  if (typeof info.view_count === "number" && info.view_count > 0) {
+    score += Math.min(14, Math.log10(info.view_count));
   }
 
   return score;
+}
+
+function parseExtractorSearchQuery(value: string): string | null {
+  const match = /^(?:ytsearch|ytsearchdate)\d*:(.+)$/i.exec(value.trim());
+  return match?.[1]?.trim() || null;
+}
+
+function uniqueInfos(entries: YtdlpInfo[]): YtdlpInfo[] {
+  const seen = new Set<string>();
+  const unique: YtdlpInfo[] = [];
+
+  for (const entry of entries) {
+    const key = youtubeVideoId(entry.id) ?? entry.webpage_url ?? entry.url ?? entry.title;
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    unique.push(entry);
+  }
+
+  return unique;
 }
 
 function looksLikeWebpageUrl(url: string): boolean {
@@ -177,7 +270,13 @@ function cloneForRequester(track: Track, options: ResolveOptions): Track {
   };
 }
 
-function createTrack(info: YtdlpInfo, options: ResolveOptions): Track | null {
+interface CreateTrackOverrides {
+  source?: string;
+  playbackTarget?: string;
+  originProvider?: "Spotify" | "SoundCloud";
+}
+
+function createTrack(info: YtdlpInfo, options: ResolveOptions, overrides: CreateTrackOverrides = {}): Track | null {
   const url = makeTrackUrl(info);
   if (!url) return null;
 
@@ -185,11 +284,11 @@ function createTrack(info: YtdlpInfo, options: ResolveOptions): Track | null {
   const seconds = typeof info.duration === "number" && Number.isFinite(info.duration) ? Math.max(0, Math.floor(info.duration)) : null;
   const rawSource = info.extractor_key || info.extractor || info.ie_key || new URL(url).hostname.replace(/^www\./, "");
   const lowerSource = rawSource.toLowerCase();
-  const source = lowerSource.includes("soundcloud") ? "SoundCloud" : lowerSource.includes("youtube") ? "YouTube" : rawSource;
+  const source = overrides.source ?? (lowerSource.includes("soundcloud") ? "SoundCloud" : lowerSource.includes("youtube") ? "YouTube" : rawSource);
   const isLive = Boolean(info.is_live || info.live_status === "is_live");
   const streamUrl = getDirectStreamUrl(info);
 
-  return {
+  const track: Track = {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
     title,
     url,
@@ -204,6 +303,12 @@ function createTrack(info: YtdlpInfo, options: ResolveOptions): Track | null {
     streamUrl,
     streamExpiresAt: streamUrl ? getStreamExpiry(streamUrl) : undefined
   };
+
+  const playbackTarget = overrides.playbackTarget ?? (source === "SoundCloud" && isSoundCloudUrl(url) ? url : undefined);
+  if (playbackTarget) track.playbackTarget = playbackTarget;
+  if (overrides.originProvider) track.originProvider = overrides.originProvider;
+
+  return track;
 }
 
 export class YtdlpExtractor implements Extractor {
@@ -235,8 +340,9 @@ export class YtdlpExtractor implements Extractor {
         });
         return tracks;
       } catch (error) {
-        logger.warn("Native SoundCloud search failed; falling back to YouTube search", error instanceof Error ? error.message : String(error));
-        return this.resolveYoutubeSearch(soundCloudSearch, options);
+        const message = error instanceof Error ? error.message : String(error);
+        logger.warn("Native SoundCloud search failed", message);
+        throw new Error(`I could not find a playable SoundCloud result for that search. ${message}`);
       }
     }
 
@@ -250,7 +356,9 @@ export class YtdlpExtractor implements Extractor {
         });
         return tracks;
       } catch (error) {
-        logger.warn("Native SoundCloud extraction failed; falling back to metadata-to-YouTube matching", error instanceof Error ? error.message : String(error));
+        const message = error instanceof Error ? error.message : String(error);
+        logger.warn("Native SoundCloud extraction failed", message);
+        throw new Error(`I could not resolve that public SoundCloud URL directly with yt-dlp. ${message}`);
       }
     }
 
@@ -349,10 +457,10 @@ export class YtdlpExtractor implements Extractor {
     const info = await this.runJson([
       "--flat-playlist",
       "--playlist-end",
-      "5",
+      "10",
       "--dump-single-json",
-      `scsearch5:${query}`
-    ], 25_000);
+      `scsearch10:${query}`
+    ], 30_000);
 
     const entries = Array.isArray(info.entries) ? info.entries : [];
     const ranked = entries
@@ -360,7 +468,22 @@ export class YtdlpExtractor implements Extractor {
       .sort((a, b) => scoreSearchCandidate(query, b) - scoreSearchCandidate(query, a));
 
     const selected = ranked[0] ?? entries[0];
-    const track = selected ? createTrack(selected, options) : null;
+    if (!selected) return [];
+
+    const selectedTarget = makeTrackUrl(selected);
+    if (selectedTarget && isSoundCloudUrl(selectedTarget)) {
+      try {
+        return await this.resolveSoundCloudUrl(selectedTarget, options);
+      } catch (error) {
+        logger.debug("Could not hydrate SoundCloud search result before playback", error instanceof Error ? error.message : String(error));
+      }
+    }
+
+    const track = createTrack(selected, options, {
+      source: "SoundCloud",
+      playbackTarget: selectedTarget ?? undefined,
+      originProvider: "SoundCloud"
+    });
     return track ? [track] : [];
   }
 
@@ -380,7 +503,11 @@ export class YtdlpExtractor implements Extractor {
     ], 25_000);
 
     const candidate = Array.isArray(info.entries) ? info.entries[0] : info;
-    const track = candidate ? createTrack(candidate, options) : null;
+    const track = candidate ? createTrack(candidate, options, {
+      source: "SoundCloud",
+      playbackTarget: query,
+      originProvider: "SoundCloud"
+    }) : null;
     return track ? [track] : [];
   }
 
@@ -396,7 +523,11 @@ export class YtdlpExtractor implements Extractor {
 
       const entries = Array.isArray(info.entries) ? info.entries : [];
       return entries
-        .map((entry) => createTrack(entry, options))
+        .map((entry) => createTrack(entry, options, {
+          source: "SoundCloud",
+          playbackTarget: makeTrackUrl(entry) ?? query,
+          originProvider: "SoundCloud"
+        }))
         .filter((track): track is Track => Boolean(track))
         .slice(0, config.maxPlaylistSize);
     } catch (error) {
@@ -407,27 +538,64 @@ export class YtdlpExtractor implements Extractor {
 
   private async resolveYoutubeSearch(query: string, options: ResolveOptions): Promise<Track[]> {
     try {
-      const info = await this.runJson([
-        "--flat-playlist",
-        "--playlist-end",
-        "5",
-        "--dump-single-json",
-        `ytsearch5:${query}`
-      ]);
-
-      const entries = Array.isArray(info.entries) ? info.entries : [];
-      const ranked = entries
-        .filter((entry) => !entry.is_live && entry.live_status !== "is_live")
-        .sort((a, b) => scoreSearchCandidate(query, b) - scoreSearchCandidate(query, a));
-
-      const selected = ranked[0] ?? entries[0];
-      const track = selected ? createTrack(selected, options) : null;
+      const selected = await this.selectBestYoutubeCandidate(query);
+      const selectedUrl = selected ? makeTrackUrl(selected) : null;
+      const track = selected ? createTrack(selected, options, { playbackTarget: selectedUrl ?? undefined }) : null;
       if (track) return [track];
     } catch (error) {
-      logger.debug("Fast YouTube search failed; falling back to detailed search", error instanceof Error ? error.message : String(error));
+      logger.debug("Smart YouTube search failed; falling back to detailed search", error instanceof Error ? error.message : String(error));
     }
 
     return this.resolveSingle(query, options);
+  }
+
+  private async selectBestYoutubeCandidate(query: string, expectedDurationSeconds?: number | null): Promise<YtdlpInfo | null> {
+    const variants = this.youtubeSearchVariants(query);
+    const results = await Promise.allSettled(
+      variants.map((variant) => this.runJson([
+        "--flat-playlist",
+        "--playlist-end",
+        String(YOUTUBE_SEARCH_CANDIDATES),
+        "--dump-single-json",
+        `ytsearch${YOUTUBE_SEARCH_CANDIDATES}:${variant}`
+      ], YOUTUBE_SEARCH_TIMEOUT_MS))
+    );
+
+    const entries = uniqueInfos(results.flatMap((result) => {
+      if (result.status !== "fulfilled") return [];
+      return Array.isArray(result.value.entries) ? result.value.entries : [];
+    }));
+
+    const ranked = entries
+      .filter((entry) => !entry.is_live && entry.live_status !== "is_live")
+      .sort((a, b) => scoreSearchCandidate(query, b, expectedDurationSeconds) - scoreSearchCandidate(query, a, expectedDurationSeconds));
+
+    return ranked[0] ?? entries[0] ?? null;
+  }
+
+  private youtubeSearchVariants(query: string): string[] {
+    const base = query.replace(/^ytsearch\d*:/i, "").trim();
+    const stripped = stripSearchNoise(base);
+    const variants = [base];
+
+    if (stripped && normalizeSearchText(stripped) !== normalizeSearchText(base)) variants.push(stripped);
+    if (stripped && !/\bofficial\b|\baudio\b|\blyrics?\b|\bvideo\b/i.test(base)) variants.push(`${stripped} official audio`);
+
+    const artistTitle = /^(.*?)\s+-\s+(.*)$/.exec(stripped);
+    if (artistTitle?.[1] && artistTitle[2]) {
+      variants.push(`${artistTitle[1]} ${artistTitle[2]}`.trim());
+    }
+
+    const seen = new Set<string>();
+    return variants
+      .map((variant) => variant.replace(/\s+/g, " ").trim())
+      .filter((variant) => {
+        const key = normalizeSearchText(variant);
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .slice(0, 3);
   }
 
   private async resolveSingle(query: string, options: ResolveOptions): Promise<Track[]> {
@@ -494,7 +662,7 @@ export class YtdlpExtractor implements Extractor {
       source: input.source,
       isLive: false,
       createdAt: Date.now(),
-      playbackTarget: `ytsearch1:${input.playbackSearch}`,
+      playbackTarget: `ytsearch${YOUTUBE_SEARCH_CANDIDATES}:${input.playbackSearch}`,
       originProvider: input.source.startsWith("Spotify") ? "Spotify" : "SoundCloud"
     };
   }
@@ -522,13 +690,24 @@ export class YtdlpExtractor implements Extractor {
       return track.streamUrl;
     }
 
-    const playbackTarget = track.playbackTarget ?? track.url;
+    let playbackTarget = track.playbackTarget ?? track.url;
+    const youtubeSearch = parseExtractorSearchQuery(playbackTarget);
+    if (youtubeSearch) {
+      const selected = await this.selectBestYoutubeCandidate(youtubeSearch, track.durationSeconds);
+      const selectedUrl = selected ? makeTrackUrl(selected) : null;
+      if (selectedUrl) {
+        playbackTarget = selectedUrl;
+        track.playbackTarget = selectedUrl;
+      }
+    }
 
     if (DIRECT_AUDIO_RE.test(playbackTarget)) return playbackTarget;
 
     const { stdout } = await execFileAsync(config.ytdlpBinary, [
       "--no-warnings",
       "--no-playlist",
+      "--playlist-items",
+      "1",
       "--quiet",
       "--force-ipv4",
       "--socket-timeout",
