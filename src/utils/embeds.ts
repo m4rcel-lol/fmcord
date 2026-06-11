@@ -61,7 +61,7 @@ export function loadingEmbed(title: string, description?: string): EmbedBuilder 
 }
 
 export function nowPlayingTitle(guildId?: string | null): string {
-  return `${fmEmoji("nowplaying", guildId)} Now playing`;
+  return `${fmEmoji("song", guildId)} Now playing`;
 }
 
 export function nowPlayingEmbed(description?: string, guildId?: string | null): EmbedBuilder {
