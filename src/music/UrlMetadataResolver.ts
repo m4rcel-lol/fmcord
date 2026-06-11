@@ -8,7 +8,31 @@ const SPOTIFY_API = "https://api.spotify.com/v1";
 const SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token";
 const SOUNDCLOUD_OEMBED_URL = "https://soundcloud.com/oembed";
 const DEFAULT_TIMEOUT_MS = 9_000;
+const SPOTIFY_REDIRECT_TIMEOUT_MS = 6_000;
 const MAX_RETRY_AFTER_MS = 3_000;
+
+const SPOTIFY_MARKET_ALIASES: Record<string, string | undefined> = {
+  EN: "GB",
+  UK: "GB",
+  USA: "US",
+  GLOBAL: undefined,
+  AUTO: undefined,
+  NONE: undefined
+};
+
+const SPOTIFY_MARKETS = new Set([
+  "AD", "AE", "AG", "AL", "AM", "AO", "AR", "AT", "AU", "AZ", "BA", "BB", "BD", "BE", "BF", "BG", "BH", "BI",
+  "BJ", "BN", "BO", "BR", "BS", "BT", "BW", "BY", "BZ", "CA", "CD", "CG", "CH", "CI", "CL", "CM", "CO", "CR",
+  "CV", "CW", "CY", "CZ", "DE", "DJ", "DK", "DM", "DO", "DZ", "EC", "EE", "EG", "ES", "ET", "FI", "FJ", "FM",
+  "FR", "GA", "GB", "GD", "GE", "GH", "GM", "GN", "GQ", "GR", "GT", "GW", "GY", "HK", "HN", "HR", "HT", "HU",
+  "ID", "IE", "IL", "IN", "IQ", "IS", "IT", "JM", "JO", "JP", "KE", "KG", "KH", "KI", "KM", "KN", "KR", "KW",
+  "KZ", "LA", "LB", "LC", "LI", "LK", "LR", "LS", "LT", "LU", "LV", "LY", "MA", "MC", "MD", "ME", "MG", "MH",
+  "MK", "ML", "MN", "MO", "MR", "MT", "MU", "MV", "MW", "MX", "MY", "MZ", "NA", "NE", "NG", "NI", "NL", "NO",
+  "NP", "NR", "NZ", "OM", "PA", "PE", "PG", "PH", "PK", "PL", "PS", "PT", "PW", "PY", "QA", "RO", "RS", "RW",
+  "SA", "SB", "SC", "SE", "SG", "SI", "SK", "SL", "SM", "SN", "SR", "ST", "SV", "SZ", "TD", "TG", "TH", "TJ",
+  "TL", "TN", "TO", "TR", "TT", "TV", "TW", "TZ", "UA", "UG", "US", "UY", "UZ", "VC", "VE", "VN", "VU", "WS",
+  "XK", "ZA", "ZM", "ZW"
+]);
 
 export type MetadataProvider = "Spotify" | "SoundCloud";
 export type MetadataKind = "track" | "album" | "playlist" | "artist" | "set";
@@ -153,9 +177,31 @@ function bestImage(images: SpotifyImage[] | SoundCloudYtdlpInfo["thumbnails"] | 
   return usable[0]?.url;
 }
 
+function spotifyMarket(): string | undefined {
+  const raw = config.spotifyMarket.trim().toUpperCase();
+  const aliased = Object.prototype.hasOwnProperty.call(SPOTIFY_MARKET_ALIASES, raw)
+    ? SPOTIFY_MARKET_ALIASES[raw]
+    : raw;
+
+  if (!aliased) return undefined;
+
+  if (!SPOTIFY_MARKETS.has(aliased)) {
+    logger.warn(`Invalid SPOTIFY_MARKET=${raw}; omitting the market parameter for Spotify metadata requests.`);
+    return undefined;
+  }
+
+  if (raw !== aliased) {
+    logger.debug(`Mapped SPOTIFY_MARKET=${raw} to Spotify country market ${aliased}.`);
+  }
+
+  return aliased;
+}
+
 function withMarket(path: string): string {
+  const market = spotifyMarket();
+  if (!market) return path;
   const separator = path.includes("?") ? "&" : "?";
-  return `${path}${separator}market=${encodeURIComponent(config.spotifyMarket)}`;
+  return `${path}${separator}market=${encodeURIComponent(market)}`;
 }
 
 async function sleep(ms: number): Promise<void> {
@@ -243,6 +289,16 @@ function parseSpotifyInput(input: string): ParsedSpotifyInput | null {
   const id = parts[typeIndex + 1]?.match(/[A-Za-z0-9]{22}/)?.[0];
   if (!kind || !id) return null;
   return { kind, id };
+}
+
+function isSpotifyShortLink(input: string): boolean {
+  if (!isHttpUrl(input)) return false;
+  try {
+    const host = new URL(input).hostname.replace(/^www\./, "").toLowerCase();
+    return host === "spotify.link" || host === "spoti.fi" || host === "spotify.app.link";
+  } catch {
+    return false;
+  }
 }
 
 function isSoundCloudUrl(input: string): boolean {
@@ -336,9 +392,33 @@ export class UrlMetadataResolver {
   private spotifyToken: SpotifyToken | null = null;
 
   public async resolve(input: string): Promise<MetadataResolveResult | null> {
-    const spotifyInput = parseSpotifyInput(input);
+    const spotifyInput = await this.parseSpotifyInputOrRedirect(input);
     if (spotifyInput) return this.resolveSpotify(spotifyInput);
     if (isSoundCloudUrl(input)) return this.resolveSoundCloud(input.trim());
+    return null;
+  }
+
+  private async parseSpotifyInputOrRedirect(input: string): Promise<ParsedSpotifyInput | null> {
+    const direct = parseSpotifyInput(input);
+    if (direct) return direct;
+
+    if (!isSpotifyShortLink(input)) return null;
+
+    try {
+      const response = await fetchWithTimeout(input.trim(), {
+        method: "GET",
+        redirect: "follow",
+        headers: {
+          Accept: "text/html,application/xhtml+xml"
+        }
+      }, SPOTIFY_REDIRECT_TIMEOUT_MS);
+
+      const redirected = response.url && response.url !== input ? parseSpotifyInput(response.url) : null;
+      if (redirected) return redirected;
+    } catch (error) {
+      logger.debug("Could not resolve Spotify short/share link", error instanceof Error ? error.message : String(error));
+    }
+
     return null;
   }
 
@@ -489,9 +569,10 @@ export class UrlMetadataResolver {
       method: "POST",
       headers: {
         Authorization: `Basic ${basic}`,
-        "Content-Type": "application/x-www-form-urlencoded"
+        "Content-Type": "application/x-www-form-urlencoded",
+        Accept: "application/json"
       },
-      body: "grant_type=client_credentials"
+      body: new URLSearchParams({ grant_type: "client_credentials" }).toString()
     }, DEFAULT_TIMEOUT_MS);
 
     if (!response.access_token) throw new Error("Spotify did not return an access token. Check your client ID and secret.");
@@ -508,7 +589,10 @@ export class UrlMetadataResolver {
     const url = pathOrUrl.startsWith("http") ? pathOrUrl : `${SPOTIFY_API}${pathOrUrl}`;
     try {
       return await fetchJson<T>(url, {
-        headers: { Authorization: `Bearer ${accessToken}` }
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Accept: "application/json"
+        }
       }, DEFAULT_TIMEOUT_MS);
     } catch (error) {
       logger.debug("Spotify metadata request failed", error instanceof Error ? error.message : String(error));

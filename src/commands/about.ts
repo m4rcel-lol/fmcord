@@ -15,7 +15,7 @@ export const aboutCommand: Command = {
           "About FMCord",
           "A lightweight, self-hosted Discord music bot using slash commands only."
         ).addFields(
-          { name: "Version", value: "2.16.0", inline: true },
+          { name: "Version", value: "2.17.0", inline: true },
           { name: "Author", value: "Marcel R.", inline: true },
           { name: "Runtime", value: `Node.js ${process.version} ${fmEmoji("nodejs", guildId)}`, inline: true },
           { name: "Language", value: `TypeScript ${fmEmoji("typescript", guildId)}`, inline: true },

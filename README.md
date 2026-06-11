@@ -109,7 +109,7 @@ VOICE_STATUS_MAX_LENGTH=80
 # Optional Spotify metadata/input support
 SPOTIFY_CLIENT_ID=
 SPOTIFY_CLIENT_SECRET=
-SPOTIFY_MARKET=PL
+SPOTIFY_MARKET=GB
 ```
 
 ### Slash command registration behavior
@@ -397,3 +397,8 @@ For SoundCloud URLs, FMCord still keeps exact public SoundCloud playback and wil
 ## v2.16 provider loop playback stability notes
 
 FMCord no longer reuses finished direct CDN/media URLs when a track is replayed through `loop track` or `loop queue`. This prevents SoundCloud and other provider URLs from resuming a few seconds into the track after a loop restart. FFmpeg also no longer reconnects at normal EOF, and it now outputs an Ogg Opus stream that matches the Discord voice resource type.
+
+
+### Spotify market note
+
+`SPOTIFY_MARKET` should be a Spotify country market such as `GB`, `US`, or `PL`. `EN` is a language code, not a Spotify country market, so FMCord maps `EN` to `GB` automatically instead of letting Spotify metadata requests fail.
