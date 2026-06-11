@@ -10,7 +10,7 @@ export const playCommand: Command = {
     .setName("play")
     .setDescription("Play a song from a URL or search query.")
     .addStringOption((option) =>
-      option.setName("query").setDescription("YouTube/Spotify/SoundCloud URL, YouTube search query, or direct audio URL.").setRequired(true)
+      option.setName("query").setDescription("YouTube URL/search, public SoundCloud URL/search, Spotify URL metadata, or direct audio URL.").setRequired(true)
     ),
 
   async execute(interaction) {
@@ -53,7 +53,7 @@ export const playCommand: Command = {
         ? error.message
         : error instanceof Error && (error.message.includes("Spotify") || error.message.includes("SoundCloud"))
           ? error.message
-          : "I could not play that track. Try a YouTube link, Spotify/SoundCloud URL, direct audio URL, or different search query.";
+          : "I could not play that track. Try a YouTube link/search, public SoundCloud URL/search, Spotify URL, direct audio URL, or different query.";
       const embed = errorEmbed("Play failed", message);
       if (interaction.deferred || interaction.replied) {
         await interaction.editReply({ embeds: [embed] });

@@ -1,7 +1,7 @@
 {
   "name": "fmcord",
-  "version": "2.12.0",
-  "description": "FMCord - a fast lightweight slash-command Discord music bot with YouTube/yt-dlp playback, optional Spotify metadata input, SoundCloud playlist-aware URL metadata input, FFmpeg Opus playback, event-based panels, custom emoji-aware red embeds, and Docker Compose support.",
+  "version": "2.13.0",
+  "description": "FMCord - a fast lightweight slash-command Discord music bot with YouTube/yt-dlp playback, optional Spotify metadata input, native public SoundCloud URL/search playback, FFmpeg Opus playback, event-based panels, custom emoji-aware red embeds, and Docker Compose support.",
   "license": "MIT",
   "main": "dist/index.js",
   "scripts": {

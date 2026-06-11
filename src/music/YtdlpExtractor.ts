@@ -49,10 +49,36 @@ function isUrl(value: string): boolean {
   }
 }
 
+function isSoundCloudUrl(value: string): boolean {
+  if (!isUrl(value)) return false;
+  try {
+    const host = new URL(value).hostname.replace(/^www\./, "").toLowerCase();
+    return host === "soundcloud.com" || host.endsWith(".soundcloud.com");
+  } catch {
+    return false;
+  }
+}
+
+function isSoundCloudPlaylistUrl(value: string): boolean {
+  if (!isSoundCloudUrl(value)) return false;
+  try {
+    const pathname = new URL(value).pathname.toLowerCase();
+    return pathname.includes("/sets/") || pathname.includes("/playlists/");
+  } catch {
+    return false;
+  }
+}
+
+function parseSoundCloudSearch(value: string): string | null {
+  const match = /^(?:sc|soundcloud)\s*:\s*(.+)$/i.exec(value.trim());
+  const query = match?.[1]?.trim();
+  return query || null;
+}
+
 function looksLikePlaylist(value: string): boolean {
   if (!isUrl(value)) return false;
   const lowered = value.toLowerCase();
-  return lowered.includes("list=") || lowered.includes("/playlist");
+  return lowered.includes("list=") || lowered.includes("/playlist") || lowered.includes("/sets/");
 }
 
 function extractorSearchTarget(value: string): boolean {
@@ -157,7 +183,9 @@ function createTrack(info: YtdlpInfo, options: ResolveOptions): Track | null {
 
   const title = info.title || info.fulltitle || basename(url).replaceAll("%20", " ") || "Unknown title";
   const seconds = typeof info.duration === "number" && Number.isFinite(info.duration) ? Math.max(0, Math.floor(info.duration)) : null;
-  const source = info.extractor_key || info.extractor || info.ie_key || new URL(url).hostname.replace(/^www\./, "");
+  const rawSource = info.extractor_key || info.extractor || info.ie_key || new URL(url).hostname.replace(/^www\./, "");
+  const lowerSource = rawSource.toLowerCase();
+  const source = lowerSource.includes("soundcloud") ? "SoundCloud" : lowerSource.includes("youtube") ? "YouTube" : rawSource;
   const isLive = Boolean(info.is_live || info.live_status === "is_live");
   const streamUrl = getDirectStreamUrl(info);
 
@@ -194,6 +222,36 @@ export class YtdlpExtractor implements Extractor {
     const cached = this.cache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
       return cached.tracks.map((track) => cloneForRequester(track, options));
+    }
+
+    const soundCloudSearch = parseSoundCloudSearch(cleanQuery);
+    if (soundCloudSearch) {
+      try {
+        const tracks = await this.resolveSoundCloudSearch(soundCloudSearch, options);
+        if (tracks.length === 0) throw new Error("No playable SoundCloud results were found.");
+        this.cache.set(cacheKey, {
+          expiresAt: Date.now() + CACHE_TTL_MS,
+          tracks
+        });
+        return tracks;
+      } catch (error) {
+        logger.warn("Native SoundCloud search failed; falling back to YouTube search", error instanceof Error ? error.message : String(error));
+        return this.resolveYoutubeSearch(soundCloudSearch, options);
+      }
+    }
+
+    if (isSoundCloudUrl(cleanQuery)) {
+      try {
+        const tracks = await this.resolveSoundCloudUrl(cleanQuery, options);
+        if (tracks.length === 0) throw new Error("SoundCloud returned no playable public tracks.");
+        this.cache.set(cacheKey, {
+          expiresAt: Date.now() + CACHE_TTL_MS,
+          tracks
+        });
+        return tracks;
+      } catch (error) {
+        logger.warn("Native SoundCloud extraction failed; falling back to metadata-to-YouTube matching", error instanceof Error ? error.message : String(error));
+      }
     }
 
     const metadataResult = await this.metadataResolver.resolve(cleanQuery);
@@ -285,6 +343,66 @@ export class YtdlpExtractor implements Extractor {
       stream: ffmpeg.stdout as Readable,
       cleanup
     };
+  }
+
+  private async resolveSoundCloudSearch(query: string, options: ResolveOptions): Promise<Track[]> {
+    const info = await this.runJson([
+      "--flat-playlist",
+      "--playlist-end",
+      "5",
+      "--dump-single-json",
+      `scsearch5:${query}`
+    ], 25_000);
+
+    const entries = Array.isArray(info.entries) ? info.entries : [];
+    const ranked = entries
+      .filter((entry) => !entry.is_live && entry.live_status !== "is_live")
+      .sort((a, b) => scoreSearchCandidate(query, b) - scoreSearchCandidate(query, a));
+
+    const selected = ranked[0] ?? entries[0];
+    const track = selected ? createTrack(selected, options) : null;
+    return track ? [track] : [];
+  }
+
+  private async resolveSoundCloudUrl(query: string, options: ResolveOptions): Promise<Track[]> {
+    if (isSoundCloudPlaylistUrl(query)) {
+      const playlist = await this.resolveSoundCloudPlaylist(query, options);
+      if (playlist.length > 0) return playlist;
+    }
+
+    const info = await this.runJson([
+      "--no-playlist",
+      "--skip-download",
+      "--format",
+      "bestaudio[acodec=opus]/bestaudio[ext=webm]/bestaudio[ext=m4a]/bestaudio/best",
+      "--dump-single-json",
+      query
+    ], 25_000);
+
+    const candidate = Array.isArray(info.entries) ? info.entries[0] : info;
+    const track = candidate ? createTrack(candidate, options) : null;
+    return track ? [track] : [];
+  }
+
+  private async resolveSoundCloudPlaylist(query: string, options: ResolveOptions): Promise<Track[]> {
+    try {
+      const info = await this.runJson([
+        "--flat-playlist",
+        "--playlist-end",
+        String(config.maxPlaylistSize),
+        "--dump-single-json",
+        query
+      ], 45_000);
+
+      const entries = Array.isArray(info.entries) ? info.entries : [];
+      return entries
+        .map((entry) => createTrack(entry, options))
+        .filter((track): track is Track => Boolean(track))
+        .slice(0, config.maxPlaylistSize);
+    } catch (error) {
+      logger.warn("SoundCloud playlist extraction failed; falling back to single track mode", error instanceof Error ? error.message : String(error));
+      return [];
+    }
   }
 
   private async resolveYoutubeSearch(query: string, options: ResolveOptions): Promise<Track[]> {
@@ -432,7 +550,7 @@ export class YtdlpExtractor implements Extractor {
     return streamUrl;
   }
 
-  private async runJson(args: string[]): Promise<YtdlpInfo> {
+  private async runJson(args: string[], timeoutMs = 20_000): Promise<YtdlpInfo> {
     const { stdout } = await execFileAsync(config.ytdlpBinary, [
       "--no-warnings",
       "--quiet",
@@ -441,7 +559,7 @@ export class YtdlpExtractor implements Extractor {
       "12",
       ...args
     ], {
-      timeout: 20_000,
+      timeout: timeoutMs,
       maxBuffer: 20 * 1024 * 1024
     });
 

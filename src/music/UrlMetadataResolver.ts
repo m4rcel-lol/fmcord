@@ -11,7 +11,7 @@ const DEFAULT_TIMEOUT_MS = 9_000;
 const MAX_RETRY_AFTER_MS = 3_000;
 
 export type MetadataProvider = "Spotify" | "SoundCloud";
-export type MetadataKind = "track" | "album" | "playlist" | "set";
+export type MetadataKind = "track" | "album" | "playlist" | "artist" | "set";
 
 export interface MetadataTrackInput {
   title: string;
@@ -44,7 +44,10 @@ interface SpotifyImage {
 }
 
 interface SpotifyArtist {
+  id?: string;
   name?: string;
+  images?: SpotifyImage[];
+  external_urls?: SpotifyExternalUrls;
 }
 
 interface SpotifyExternalUrls {
@@ -116,7 +119,7 @@ interface SoundCloudYtdlpInfo {
 }
 
 interface ParsedSpotifyInput {
-  kind: "track" | "album" | "playlist";
+  kind: "track" | "album" | "playlist" | "artist";
   id: string;
 }
 
@@ -213,7 +216,7 @@ async function fetchJson<T>(url: string, init: RequestInit = {}, timeoutMs = DEF
 
 function parseSpotifyInput(input: string): ParsedSpotifyInput | null {
   const clean = input.trim();
-  const uriMatch = /^spotify:(track|album|playlist):([A-Za-z0-9]{22})$/i.exec(clean);
+  const uriMatch = /^spotify:(track|album|playlist|artist):([A-Za-z0-9]{22})$/i.exec(clean);
   if (uriMatch) {
     const kind = uriMatch[1];
     const id = uriMatch[2];
@@ -233,7 +236,7 @@ function parseSpotifyInput(input: string): ParsedSpotifyInput | null {
   if (host !== "open.spotify.com" && !host.endsWith(".spotify.com")) return null;
 
   const parts = url.pathname.split("/").filter(Boolean);
-  const typeIndex = parts.findIndex((part) => ["track", "album", "playlist"].includes(part.toLowerCase()));
+  const typeIndex = parts.findIndex((part) => ["track", "album", "playlist", "artist"].includes(part.toLowerCase()));
   if (typeIndex < 0) return null;
 
   const kind = parts[typeIndex]?.toLowerCase() as ParsedSpotifyInput["kind"] | undefined;
@@ -366,6 +369,24 @@ export class UrlMetadataResolver {
         tracks,
         collectionTitle: album.name,
         truncated: typeof album.tracks?.total === "number" ? album.tracks.total > tracks.length : false
+      };
+    }
+
+    if (input.kind === "artist") {
+      const artist = await this.spotifyGet<SpotifyArtist>(`/artists/${input.id}`);
+      const topTracks = await this.spotifyGet<{ tracks?: SpotifyTrack[] }>(withMarket(`/artists/${input.id}/top-tracks`));
+      const fallbackImage = bestImage(artist.images);
+      const tracks = (topTracks.tracks ?? [])
+        .map((track) => spotifyTrackToInput(track, fallbackImage, "artist"))
+        .filter((track): track is MetadataTrackInput => Boolean(track))
+        .slice(0, Math.min(config.maxPlaylistSize, 10));
+      if (tracks.length === 0) throw new Error("Spotify returned no readable top tracks for that artist.");
+      return {
+        provider: "Spotify",
+        kind: "artist",
+        tracks,
+        collectionTitle: artist.name,
+        truncated: false
       };
     }
 
